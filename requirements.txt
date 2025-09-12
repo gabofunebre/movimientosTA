@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+SQLAlchemy>=2
+psycopg2-binary
+pydantic
+aiofiles
+jinja2
+python-multipart
+itsdangerous
+python-dotenv
+

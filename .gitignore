@@ -1,0 +1,11 @@
+.env
+postgres_data/
+# runtime/secretos
+.env
+*.env
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+*.sqlite*
+postgres_data/
