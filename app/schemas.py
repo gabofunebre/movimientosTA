@@ -80,6 +80,32 @@ class FrequentOut(FrequentIn):
         from_attributes = True
 
 
+class WithheldTaxTypeIn(BaseModel):
+    name: str
+
+
+class WithheldTaxTypeOut(WithheldTaxTypeIn):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class RetentionIn(BaseModel):
+    date: date
+    tax_type_id: int
+    amount: Decimal
+    notes: str = ""
+
+
+class RetentionOut(RetentionIn):
+    id: int
+    tax_type: WithheldTaxTypeOut | None = None
+
+    class Config:
+        from_attributes = True
+
+
 class AccountBalance(BaseModel):
     account_id: int
     name: str

@@ -89,6 +89,37 @@ class FrequentTransaction(Base):
     )
 
 
+class WithheldTaxType(Base):
+    __tablename__ = "withheld_tax_types"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    retentions = relationship("Retention", back_populates="tax_type")
+
+
+class Retention(Base):
+    __tablename__ = "retentions"
+    __table_args__ = (
+        Index("ix_retentions_date_id", "date", "id"),
+        CheckConstraint("amount > 0", name="ck_retentions_amount_positive"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    tax_type_id: Mapped[int] = mapped_column(
+        ForeignKey("withheld_tax_types.id"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    tax_type = relationship("WithheldTaxType", back_populates="retentions")
+
+
 class User(Base):
     """Application users for authentication and authorization."""
 

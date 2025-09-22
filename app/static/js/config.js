@@ -6,11 +6,16 @@ import {
   fetchFrequents,
   createFrequent,
   updateFrequent,
-  deleteFrequent
+  deleteFrequent,
+  fetchWithheldTaxTypes,
+  createWithheldTaxType,
+  updateWithheldTaxType,
+  deleteWithheldTaxType
 } from './api.js?v=1';
 import {
   renderAccount,
   renderFrequent,
+  renderWithheldTaxType,
   showOverlay,
   hideOverlay,
 } from './ui.js?v=1';
@@ -48,6 +53,21 @@ const freqConfirmMessage = freqConfirmEl.querySelector('#confirm-freq-message');
 const freqConfirmBtn = freqConfirmEl.querySelector('#confirm-freq-yes');
 let freqToDelete = null;
 let frequents = [];
+
+const withheldTbody = document.querySelector('#withheld-table tbody');
+const withheldModalEl = document.getElementById('withheldModal');
+const withheldModal = new bootstrap.Modal(withheldModalEl);
+const withheldForm = document.getElementById('withheld-form');
+const addWithheldBtn = document.getElementById('add-withheld');
+const withheldAlertBox = document.getElementById('withheld-alert');
+const withheldIdField = withheldForm.querySelector('input[name="id"]');
+const withheldModalTitle = withheldModalEl.querySelector('.modal-title');
+const withheldConfirmEl = document.getElementById('confirmWithheldModal');
+const withheldConfirmModal = new bootstrap.Modal(withheldConfirmEl);
+const withheldConfirmMessage = withheldConfirmEl.querySelector('#confirm-withheld-message');
+const withheldConfirmBtn = withheldConfirmEl.querySelector('#confirm-withheld-yes');
+let withheldToDelete = null;
+let withheldTypes = [];
 
 function populateCurrencies() {
   currencySelect.innerHTML = '';
@@ -244,4 +264,89 @@ freqConfirmBtn.addEventListener('click', async () => {
   }
   freqToDelete = null;
 });
-loadAccounts().then(() => loadFrequents());
+
+async function loadWithheldTypes() {
+  withheldTypes = await fetchWithheldTaxTypes();
+  withheldTbody.innerHTML = '';
+  withheldTypes.forEach(type => {
+    renderWithheldTaxType(withheldTbody, type, startEditWithheld, removeWithheld);
+  });
+}
+
+function startEditWithheld(type) {
+  withheldForm.reset();
+  withheldForm.name.value = type.name;
+  withheldIdField.value = type.id;
+  withheldAlertBox.classList.add('d-none');
+  withheldModalTitle.textContent = 'Editar impuesto retenido';
+  withheldModal.show();
+}
+
+async function removeWithheld(type) {
+  withheldToDelete = type;
+  withheldConfirmMessage.textContent = `¿Eliminar impuesto retenido "${type.name}"?`;
+  withheldConfirmModal.show();
+}
+
+withheldConfirmBtn.addEventListener('click', async () => {
+  if (!withheldToDelete) return;
+  withheldConfirmModal.hide();
+  showOverlay();
+  const result = await deleteWithheldTaxType(withheldToDelete.id);
+  hideOverlay();
+  if (result.ok) {
+    withheldTbody.innerHTML = '';
+    await loadWithheldTypes();
+  } else {
+    alert(result.error || 'Error al eliminar');
+  }
+  withheldToDelete = null;
+});
+
+addWithheldBtn.addEventListener('click', () => {
+  withheldForm.reset();
+  withheldIdField.value = '';
+  withheldAlertBox.classList.add('d-none');
+  withheldModalTitle.textContent = 'Nuevo impuesto retenido';
+  withheldModal.show();
+});
+
+withheldForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!withheldForm.reportValidity()) return;
+  const data = new FormData(withheldForm);
+  const name = (data.get('name') || '').trim();
+  if (!name) {
+    withheldAlertBox.classList.remove('d-none', 'alert-success', 'alert-danger');
+    withheldAlertBox.classList.add('alert-danger');
+    withheldAlertBox.textContent = 'El nombre es obligatorio';
+    return;
+  }
+  const payload = { name };
+  showOverlay();
+  let result;
+  if (withheldIdField.value) {
+    result = await updateWithheldTaxType(withheldIdField.value, payload);
+  } else {
+    result = await createWithheldTaxType(payload);
+  }
+  hideOverlay();
+  withheldAlertBox.classList.remove('d-none', 'alert-success', 'alert-danger');
+  if (result.ok) {
+    withheldAlertBox.classList.add('alert-success');
+    withheldAlertBox.textContent = 'Impuesto retenido guardado';
+    withheldTbody.innerHTML = '';
+    await loadWithheldTypes();
+    setTimeout(() => {
+      withheldModal.hide();
+      withheldAlertBox.classList.add('d-none');
+    }, 800);
+  } else {
+    withheldAlertBox.classList.add('alert-danger');
+    withheldAlertBox.textContent = result.error || 'Error al guardar';
+  }
+});
+loadAccounts().then(() => {
+  loadFrequents();
+  loadWithheldTypes();
+});
