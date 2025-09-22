@@ -205,3 +205,95 @@ export async function deleteFrequent(id) {
   } catch (_) {}
   return { ok: false, error };
 }
+
+export async function fetchWithheldTaxTypes() {
+  const res = await fetch('/withheld-taxes');
+  return res.json();
+}
+
+export async function createWithheldTaxType(payload) {
+  const res = await fetch('/withheld-taxes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (res.ok) return { ok: true };
+  let error = 'Error al guardar';
+  try {
+    const data = await res.json();
+    error = data.detail || error;
+  } catch (_) {}
+  return { ok: false, error };
+}
+
+export async function updateWithheldTaxType(id, payload) {
+  const res = await fetch(`/withheld-taxes/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (res.ok) return { ok: true };
+  let error = 'Error al guardar';
+  try {
+    const data = await res.json();
+    error = data.detail || error;
+  } catch (_) {}
+  return { ok: false, error };
+}
+
+export async function deleteWithheldTaxType(id) {
+  const res = await fetch(`/withheld-taxes/${id}`, { method: 'DELETE' });
+  if (res.ok) return { ok: true };
+  let error = 'Error al eliminar';
+  try {
+    const data = await res.json();
+    error = data.detail || error;
+  } catch (_) {}
+  return { ok: false, error };
+}
+
+export async function fetchRetentions() {
+  const res = await fetch('/retentions');
+  return res.json();
+}
+
+export async function createRetention(payload) {
+  const res = await fetch('/retentions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (res.ok) return { ok: true };
+  let error = 'Error al guardar';
+  try {
+    const data = await res.json();
+    error = data.detail || error;
+  } catch (_) {}
+  return { ok: false, error };
+}
+
+export async function updateRetention(id, payload) {
+  const res = await fetch(`/retentions/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (res.ok) return { ok: true };
+  let error = 'Error al guardar';
+  try {
+    const data = await res.json();
+    error = data.detail || error;
+  } catch (_) {}
+  return { ok: false, error };
+}
+
+export async function deleteRetention(id) {
+  const res = await fetch(`/retentions/${id}`, { method: 'DELETE' });
+  if (res.ok) return { ok: true };
+  let error = 'Error al eliminar';
+  try {
+    const data = await res.json();
+    error = data.detail || error;
+  } catch (_) {}
+  return { ok: false, error };
+}

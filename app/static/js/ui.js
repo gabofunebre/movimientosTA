@@ -166,6 +166,56 @@ export function renderFrequent(tbody, freq, onEdit, onDelete) {
   tbody.appendChild(tr);
 }
 
+export function renderWithheldTaxType(tbody, taxType, onEdit, onDelete) {
+  const tr = document.createElement('tr');
+  tr.classList.add('text-center');
+  tr.innerHTML =
+    `<td>${taxType.name}</td>` +
+    `<td class="text-nowrap">` +
+    `<button class="btn btn-sm btn-outline-secondary me-2" title="Editar"><i class="bi bi-pencil"></i></button>` +
+    `<button class="btn btn-sm btn-outline-danger" title="Eliminar"><i class="bi bi-x"></i></button>` +
+    `</td>`;
+  const [editBtn, delBtn] = tr.querySelectorAll('button');
+  if (onEdit) editBtn.addEventListener('click', () => onEdit(taxType));
+  if (onDelete) delBtn.addEventListener('click', () => onDelete(taxType));
+  tbody.appendChild(tr);
+}
+
+export function renderRetention(tbody, retention, taxTypeMap, onEdit, onDelete) {
+  const tr = document.createElement('tr');
+  const dateObj = new Date(retention.date);
+  const formattedDate = dateObj
+    .toLocaleDateString('es-ES', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    })
+    .replace('.', '');
+  const type =
+    taxTypeMap[retention.tax_type_id]?.name || retention.tax_type?.name || '';
+  const amount = formatCurrency(Number(retention.amount));
+  const notes = retention.notes ? retention.notes : '';
+  tr.innerHTML =
+    `<td class="text-center">${formattedDate}</td>` +
+    `<td>${type}</td>` +
+    `<td class="text-end">$ ${amount}</td>` +
+    `<td>${notes || ''}</td>`;
+
+  const actionsTd = document.createElement('td');
+  actionsTd.classList.add('text-center', 'text-nowrap');
+  if (window.isAdmin && (onEdit || onDelete)) {
+    actionsTd.innerHTML =
+      `<button class="btn btn-sm btn-outline-secondary me-2" title="Editar"><i class="bi bi-pencil"></i></button>` +
+      `<button class="btn btn-sm btn-outline-danger" title="Eliminar"><i class="bi bi-x"></i></button>`;
+    const [editBtn, delBtn] = actionsTd.querySelectorAll('button');
+    if (onEdit) editBtn.addEventListener('click', () => onEdit(retention));
+    if (onDelete) delBtn.addEventListener('click', () => onDelete(retention));
+  }
+  tr.appendChild(actionsTd);
+
+  tbody.appendChild(tr);
+}
+
 const overlayEl = document.getElementById('overlay');
 
 export function showOverlay() {

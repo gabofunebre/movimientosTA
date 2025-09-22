@@ -19,6 +19,8 @@ from routes.frequents import router as frequents_router
 from routes.invoices import router as invoices_router
 from routes.users import router as users_router
 from routes.billing_info import router as billing_info_router
+from routes.retentions import router as retentions_router
+from routes.withheld_taxes import router as withheld_taxes_router
 
 load_dotenv()
 
@@ -77,6 +79,8 @@ app.include_router(frequents_router)
 app.include_router(invoices_router)
 app.include_router(users_router)
 app.include_router(billing_info_router)
+app.include_router(retentions_router)
+app.include_router(withheld_taxes_router)
 
 app.mount(
     "/static",
@@ -138,6 +142,19 @@ async def billing(request: Request, db: Session = Depends(get_db), user=Depends(
     return templates.TemplateResponse(
         "billing.html",
         {"request": request, "title": title, "header_title": header_title, "user": user},
+    )
+
+
+@app.get("/retentions.html", response_class=HTMLResponse)
+async def retentions_page(request: Request, user=Depends(get_current_user)):
+    return templates.TemplateResponse(
+        "retentions.html",
+        {
+            "request": request,
+            "title": "Retenciones",
+            "header_title": "Retenciones",
+            "user": user,
+        },
     )
 
 
