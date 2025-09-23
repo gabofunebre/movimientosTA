@@ -19,6 +19,7 @@ from routes.frequents import router as frequents_router
 from routes.invoices import router as invoices_router
 from routes.users import router as users_router
 from routes.billing_info import router as billing_info_router
+from routes.billing_movements import router as billing_movements_router
 
 load_dotenv()
 
@@ -77,6 +78,7 @@ app.include_router(frequents_router)
 app.include_router(invoices_router)
 app.include_router(users_router)
 app.include_router(billing_info_router)
+app.include_router(billing_movements_router)
 
 app.mount(
     "/static",

@@ -56,6 +56,19 @@ class Transaction(Base):
     account = relationship("Account", back_populates="transactions")
 
 
+class BillingSyncStatus(Base):
+    __tablename__ = "billing_sync_status"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    last_transaction_id: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        server_onupdate=func.now(),
+    )
+
+
 class Invoice(Base):
     __tablename__ = "invoices"
     __table_args__ = (
