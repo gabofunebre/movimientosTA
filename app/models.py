@@ -49,11 +49,17 @@ class Transaction(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     notes: Mapped[str] = mapped_column(Text, default="")
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    exportable_movement_id: Mapped[int | None] = mapped_column(
+        ForeignKey("movimientos_exportables.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
     account = relationship("Account", back_populates="transactions")
+    exportable_movement = relationship(
+        "ExportableMovement", back_populates="transactions"
+    )
 
 
 class BillingSyncStatus(Base):
@@ -100,6 +106,18 @@ class FrequentTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class ExportableMovement(Base):
+    __tablename__ = "movimientos_exportables"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    transactions = relationship("Transaction", back_populates="exportable_movement")
 
 
 class User(Base):

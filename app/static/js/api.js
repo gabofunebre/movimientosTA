@@ -205,3 +205,49 @@ export async function deleteFrequent(id) {
   } catch (_) {}
   return { ok: false, error };
 }
+
+export async function fetchExportables() {
+  const res = await fetch('/movimientos_exportables');
+  return res.json();
+}
+
+export async function createExportable(payload) {
+  const res = await fetch('/movimientos_exportables', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (res.ok) return { ok: true };
+  let error = 'Error al guardar';
+  try {
+    const data = await res.json();
+    error = data.detail || error;
+  } catch (_) {}
+  return { ok: false, error };
+}
+
+export async function updateExportable(id, payload) {
+  const res = await fetch(`/movimientos_exportables/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (res.ok) return { ok: true };
+  let error = 'Error al guardar';
+  try {
+    const data = await res.json();
+    error = data.detail || error;
+  } catch (_) {}
+  return { ok: false, error };
+}
+
+export async function deleteExportable(id) {
+  const res = await fetch(`/movimientos_exportables/${id}`, { method: 'DELETE' });
+  if (res.ok) return { ok: true };
+  let error = 'Error al eliminar';
+  try {
+    const data = await res.json();
+    error = data.detail || error;
+  } catch (_) {}
+  return { ok: false, error };
+}

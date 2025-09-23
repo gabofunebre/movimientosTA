@@ -51,6 +51,7 @@ def list_billing_movements(
         .where(
             Transaction.account_id == account.id,
             Transaction.id > last_confirmed_id,
+            Transaction.exportable_movement_id.is_not(None),
         )
         .order_by(Transaction.id.asc())
         .limit(limit + 1)
