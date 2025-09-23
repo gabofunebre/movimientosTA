@@ -47,12 +47,7 @@ async function toggleDetails(row, acc) {
     Number(summary.opening_balance) +
     Number(summary.income_balance) -
     Number(summary.expense_balance);
-  const ivaBalance = summary.is_billing
-    ? Number(summary.iva_purchases) - Number(summary.iva_sales)
-    : 0;
-  const total = summary.is_billing
-    ? balance + ivaBalance - Number(summary.iibb)
-    : balance;
+  const total = balance;
 
   let html = '<div class="container text-start">';
   html += '<div class="row">';
@@ -62,14 +57,6 @@ async function toggleDetails(row, acc) {
   html += `<p><strong>Egresos:</strong> <span class="text-danger">${symbol} ${formatCurrency(summary.expense_balance)}</span></p>`;
   html += `<p><strong>Balance:</strong> <span class="text-dark fst-italic">${symbol} ${formatCurrency(balance)}</span></p>`;
   html += '</div>';
-  if (summary.is_billing) {
-    html += '<div class="col">';
-    html += `<p><strong>IVA Compras:</strong> <span class="text-success">${symbol} ${formatCurrency(summary.iva_purchases)}</span></p>`;
-    html += `<p><strong>IVA Ventas:</strong> <span class="text-danger">${symbol} ${formatCurrency(summary.iva_sales)}</span></p>`;
-    html += `<p><strong>Balance IVA:</strong> <span class="text-dark fst-italic">${symbol} ${formatCurrency(ivaBalance)}</span></p>`;
-    html += `<p><strong>IIBB:</strong> <span class="text-danger">${symbol} ${formatCurrency(summary.iibb)}</span></p>`;
-    html += '</div>';
-  }
   html += '</div>';
   html += `<div class="row"><div class="col text-center"><p class="mb-0"><strong>Total Disponible:</strong> <span class="text-dark fw-bold fs-5">${symbol} ${formatCurrency(total)}</span></p></div></div>`;
   html += '</div>';
