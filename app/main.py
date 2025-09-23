@@ -30,7 +30,13 @@ app = FastAPI(title="Movimientos")
 @app.middleware("http")
 async def require_login_middleware(request: Request, call_next):
     path = request.url.path
-    allowed = {"/login", "/register", "/health", "/facturacion-info"}
+    allowed = {
+        "/login",
+        "/register",
+        "/health",
+        "/facturacion-info",
+        "/movimientos_cuenta_facturada",
+    }
     if not request.session.get("user_id") and not path.startswith("/static") and path not in allowed:
         return RedirectResponse("/login")
     return await call_next(request)
