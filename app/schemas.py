@@ -24,6 +24,7 @@ class TransactionCreate(BaseModel):
     description: str = ""
     amount: Decimal
     notes: str = ""
+    exportable_movement_id: int | None = None
 
 
 class TransactionOut(BaseModel):
@@ -33,6 +34,7 @@ class TransactionOut(BaseModel):
     description: str
     amount: Decimal
     notes: str
+    exportable_movement_id: int | None = None
 
     class Config:
         from_attributes = True
@@ -94,6 +96,17 @@ class FrequentIn(BaseModel):
 
 
 class FrequentOut(FrequentIn):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class ExportableMovementIn(BaseModel):
+    description: str
+
+
+class ExportableMovementOut(ExportableMovementIn):
     id: int
 
     class Config:

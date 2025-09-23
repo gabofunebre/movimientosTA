@@ -3,6 +3,7 @@ import {
   fetchTransactions,
   createTransaction,
   fetchFrequents,
+  fetchExportables,
   updateTransaction,
   deleteTransaction
 } from './api.js?v=1';
@@ -24,6 +25,8 @@ const headers = document.querySelectorAll('#tx-table thead th.sortable');
 const freqCheck = document.getElementById('freq-check');
 const freqSelect = document.getElementById('freq-select');
 const descInput = document.getElementById('desc-input');
+const inkwellCheck = document.getElementById('inkwell-check');
+const inkwellSelect = document.getElementById('inkwell-select');
 
 let offset = 0;
 const limit = 50;
@@ -35,6 +38,9 @@ let sortColumn = 0;
 let sortAsc = false;
 let frequents = [];
 let frequentMap = {};
+let exportables = [];
+let exportableMap = {};
+let billingAccountId = null;
 
 function renderTransactions() {
   const q = searchBox.value.trim().toLowerCase();
@@ -76,10 +82,24 @@ async function loadMore() {
   loading = false;
 }
 
+function populateAccountSelect(restrictToBilling = false, selectedId = null) {
+  let list = accounts.filter(a => a.is_active);
+  if (restrictToBilling) {
+    list = list.filter(a => a.id === billingAccountId);
+  }
+  populateAccounts(form.account_id, list);
+  if (selectedId !== null && list.some(acc => acc.id === Number(selectedId))) {
+    form.account_id.value = String(selectedId);
+  } else if (restrictToBilling && billingAccountId && list.length) {
+    form.account_id.value = String(billingAccountId);
+  }
+}
+
 function openModal(type) {
   form.reset();
-  document.getElementById('form-title').textContent = type === 'income' ? 'Nuevo Ingreso' : 'Nuevo Egreso';
-  populateAccounts(form.account_id, accounts.filter(a => a.is_active));
+  document.getElementById('form-title').textContent =
+    type === 'income' ? 'Nuevo Ingreso' : 'Nuevo Egreso';
+  populateAccountSelect(false);
   form.dataset.type = type;
   form.dataset.mode = 'create';
   delete form.dataset.id;
@@ -88,16 +108,21 @@ function openModal(type) {
   form.date.max = today;
   form.date.value = today;
   freqCheck.checked = false;
+  inkwellCheck.checked = false;
   descInput.classList.remove('d-none');
   freqSelect.classList.add('d-none');
+  inkwellSelect.classList.add('d-none');
+  freqSelect.innerHTML = '';
+  inkwellSelect.innerHTML = '';
   txModal.show();
 }
 
 function openEditModal(tx) {
   form.reset();
   const isIncome = tx.amount >= 0;
-  document.getElementById('form-title').textContent = isIncome ? 'Editar Ingreso' : 'Editar Egreso';
-  populateAccounts(form.account_id, accounts.filter(a => a.is_active));
+  document.getElementById('form-title').textContent = isIncome
+    ? 'Editar Ingreso'
+    : 'Editar Egreso';
   form.dataset.type = isIncome ? 'income' : 'expense';
   form.dataset.mode = 'edit';
   form.dataset.id = tx.id;
@@ -106,11 +131,22 @@ function openEditModal(tx) {
   form.date.max = today;
   form.date.value = tx.date;
   freqCheck.checked = false;
+  inkwellCheck.checked = false;
   descInput.classList.remove('d-none');
   freqSelect.classList.add('d-none');
+  inkwellSelect.classList.add('d-none');
   descInput.value = tx.description;
   form.amount.value = Math.abs(tx.amount);
-  form.account_id.value = tx.account_id;
+  populateAccountSelect(false, tx.account_id);
+  form.account_id.value = String(tx.account_id);
+  if (tx.exportable_movement_id && exportableMap[tx.exportable_movement_id]) {
+    inkwellCheck.checked = true;
+    populateInkwellSelect(String(tx.exportable_movement_id));
+    inkwellSelect.classList.remove('d-none');
+    descInput.classList.add('d-none');
+    applyExportable(exportableMap[tx.exportable_movement_id]);
+    populateAccountSelect(true, tx.account_id);
+  }
   txModal.show();
 }
 
@@ -133,21 +169,61 @@ document.getElementById('add-expense').addEventListener('click', () => openModal
 searchBox.addEventListener('input', renderTransactions);
 freqCheck.addEventListener('change', () => {
   if (freqCheck.checked) {
+    inkwellCheck.checked = false;
+    inkwellSelect.classList.add('d-none');
     populateFreqSelect();
     descInput.classList.add('d-none');
     freqSelect.classList.remove('d-none');
     if (freqSelect.value) {
       applyFrequent(frequentMap[freqSelect.value]);
     }
+    populateAccountSelect(false, form.account_id.value);
   } else {
-    descInput.classList.remove('d-none');
     freqSelect.classList.add('d-none');
+    if (!inkwellCheck.checked) {
+      descInput.classList.remove('d-none');
+    }
+  }
+});
+
+inkwellCheck.addEventListener('change', () => {
+  const currentAccountId = form.account_id.value ? Number(form.account_id.value) : null;
+  if (inkwellCheck.checked) {
+    if (!billingAccountId) {
+      alert('No hay una cuenta de facturación configurada.');
+      inkwellCheck.checked = false;
+      return;
+    }
+    if (!exportables.length) {
+      alert('No hay movimientos Inkwell configurados.');
+      inkwellCheck.checked = false;
+      return;
+    }
+    freqCheck.checked = false;
+    freqSelect.classList.add('d-none');
+    populateInkwellSelect();
+    inkwellSelect.classList.remove('d-none');
+    descInput.classList.add('d-none');
+    const movement = exportableMap[Number(inkwellSelect.value)];
+    applyExportable(movement);
+    populateAccountSelect(true, billingAccountId);
+  } else {
+    inkwellSelect.classList.add('d-none');
+    if (!freqCheck.checked) {
+      descInput.classList.remove('d-none');
+    }
+    populateAccountSelect(false, currentAccountId);
   }
 });
 
 freqSelect.addEventListener('change', () => {
   const f = frequentMap[freqSelect.value];
   if (f) applyFrequent(f);
+});
+
+inkwellSelect.addEventListener('change', () => {
+  const movement = exportableMap[Number(inkwellSelect.value)];
+  if (movement) applyExportable(movement);
 });
 
 function populateFreqSelect() {
@@ -158,11 +234,33 @@ function populateFreqSelect() {
     opt.textContent = f.description;
     freqSelect.appendChild(opt);
   });
+  if (freqSelect.options.length > 0) {
+    freqSelect.value = freqSelect.options[0].value;
+  }
 }
 
 function applyFrequent(f) {
   if (!f) return;
   descInput.value = f.description;
+}
+
+function populateInkwellSelect(selectedId = null) {
+  inkwellSelect.innerHTML = '';
+  exportables.forEach(movement => {
+    const opt = document.createElement('option');
+    opt.value = movement.id;
+    opt.textContent = movement.description;
+    inkwellSelect.appendChild(opt);
+  });
+  if (inkwellSelect.options.length > 0) {
+    const valueToSelect = selectedId || inkwellSelect.options[0].value;
+    inkwellSelect.value = valueToSelect;
+  }
+}
+
+function applyExportable(movement) {
+  if (!movement) return;
+  descInput.value = movement.description;
 }
 
 headers.forEach((th, index) => {
@@ -205,10 +303,11 @@ form.addEventListener('submit', async e => {
   amount = form.dataset.type === 'expense' ? -Math.abs(amount) : Math.abs(amount);
   const payload = {
     date: data.get('date'),
-    description: data.get('description'),
+    description: descInput.value,
     amount,
     notes: '',
-    account_id: parseInt(data.get('account_id'), 10)
+    account_id: parseInt(data.get('account_id'), 10),
+    exportable_movement_id: null,
   };
   const today = new Date().toISOString().split('T')[0];
   if (payload.date > today) {
@@ -216,6 +315,20 @@ form.addEventListener('submit', async e => {
     alertBox.classList.add('alert-danger');
     alertBox.textContent = 'La fecha no puede ser futura';
     return;
+  }
+
+  if (inkwellCheck.checked) {
+    const selectedId = Number(inkwellSelect.value);
+    const movement = exportableMap[selectedId];
+    if (!movement) {
+      alertBox.classList.remove('d-none', 'alert-success', 'alert-danger');
+      alertBox.classList.add('alert-danger');
+      alertBox.textContent = 'Seleccioná un movimiento Inkwell válido';
+      return;
+    }
+    payload.exportable_movement_id = movement.id;
+    payload.description = movement.description;
+    payload.account_id = billingAccountId || payload.account_id;
   }
 
   showOverlay();
@@ -246,8 +359,12 @@ form.addEventListener('submit', async e => {
 (async function init() {
   accounts = await fetchAccounts(true);
   accountMap = Object.fromEntries(accounts.map(a => [a.id, a]));
+  const billingAccount = accounts.find(a => a.is_billing);
+  billingAccountId = billingAccount ? billingAccount.id : null;
   frequents = await fetchFrequents();
   frequentMap = Object.fromEntries(frequents.map(f => [f.id, f]));
+  exportables = await fetchExportables();
+  exportableMap = Object.fromEntries(exportables.map(m => [m.id, m]));
   await loadMore();
   updateSortIcons();
 })();

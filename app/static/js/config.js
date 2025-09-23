@@ -6,11 +6,16 @@ import {
   fetchFrequents,
   createFrequent,
   updateFrequent,
-  deleteFrequent
+  deleteFrequent,
+  fetchExportables,
+  createExportable,
+  updateExportable,
+  deleteExportable
 } from './api.js?v=1';
 import {
   renderAccount,
   renderFrequent,
+  renderExportable,
   showOverlay,
   hideOverlay,
 } from './ui.js?v=1';
@@ -48,6 +53,20 @@ const freqConfirmMessage = freqConfirmEl.querySelector('#confirm-freq-message');
 const freqConfirmBtn = freqConfirmEl.querySelector('#confirm-freq-yes');
 let freqToDelete = null;
 let frequents = [];
+const inkwellTbody = document.querySelector('#inkwell-table tbody');
+const inkwellModalEl = document.getElementById('inkwellModal');
+const inkwellModal = new bootstrap.Modal(inkwellModalEl);
+const inkwellForm = document.getElementById('inkwell-form');
+const addInkwellBtn = document.getElementById('add-inkwell');
+const inkwellAlertBox = document.getElementById('inkwell-alert');
+const inkwellIdField = inkwellForm.querySelector('input[name="id"]');
+const inkwellModalTitle = inkwellModalEl.querySelector('.modal-title');
+const inkwellConfirmEl = document.getElementById('confirmInkwellModal');
+const inkwellConfirmModal = new bootstrap.Modal(inkwellConfirmEl);
+const inkwellConfirmMessage = inkwellConfirmEl.querySelector('#confirm-inkwell-message');
+const inkwellConfirmBtn = inkwellConfirmEl.querySelector('#confirm-inkwell-yes');
+let inkwellToDelete = null;
+let exportables = [];
 
 function populateCurrencies() {
   currencySelect.innerHTML = '';
@@ -244,4 +263,81 @@ freqConfirmBtn.addEventListener('click', async () => {
   }
   freqToDelete = null;
 });
-loadAccounts().then(() => loadFrequents());
+
+addInkwellBtn.addEventListener('click', () => {
+  inkwellForm.reset();
+  inkwellIdField.value = '';
+  inkwellAlertBox.classList.add('d-none');
+  inkwellModalTitle.textContent = 'Nuevo movimiento Inkwell';
+  inkwellModal.show();
+});
+
+inkwellForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!inkwellForm.reportValidity()) return;
+  const data = new FormData(inkwellForm);
+  const payload = {
+    description: data.get('description')
+  };
+  showOverlay();
+  let result;
+  if (inkwellIdField.value) {
+    result = await updateExportable(inkwellIdField.value, payload);
+  } else {
+    result = await createExportable(payload);
+  }
+  hideOverlay();
+  inkwellAlertBox.classList.remove('d-none', 'alert-success', 'alert-danger');
+  if (result.ok) {
+    inkwellAlertBox.classList.add('alert-success');
+    inkwellAlertBox.textContent = 'Movimiento Inkwell guardado';
+    inkwellTbody.innerHTML = '';
+    await loadExportables();
+  } else {
+    inkwellAlertBox.classList.add('alert-danger');
+    inkwellAlertBox.textContent = result.error || 'Error al guardar';
+  }
+});
+
+async function loadExportables() {
+  exportables = await fetchExportables();
+  inkwellTbody.innerHTML = '';
+  exportables.forEach(movement => {
+    renderExportable(inkwellTbody, movement, startEditInkwell, removeInkwell);
+  });
+}
+
+function startEditInkwell(movement) {
+  inkwellForm.reset();
+  inkwellForm.description.value = movement.description;
+  inkwellIdField.value = movement.id;
+  inkwellAlertBox.classList.add('d-none');
+  inkwellModalTitle.textContent = 'Editar movimiento Inkwell';
+  inkwellModal.show();
+}
+
+async function removeInkwell(movement) {
+  inkwellToDelete = movement;
+  inkwellConfirmMessage.textContent = `¿Eliminar movimiento Inkwell "${movement.description}"?`;
+  inkwellConfirmModal.show();
+}
+
+inkwellConfirmBtn.addEventListener('click', async () => {
+  if (!inkwellToDelete) return;
+  inkwellConfirmModal.hide();
+  showOverlay();
+  const result = await deleteExportable(inkwellToDelete.id);
+  hideOverlay();
+  if (result.ok) {
+    inkwellTbody.innerHTML = '';
+    await loadExportables();
+  } else {
+    alert(result.error || 'Error al eliminar');
+  }
+  inkwellToDelete = null;
+});
+
+loadAccounts().then(async () => {
+  await loadFrequents();
+  await loadExportables();
+});

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from config.db import get_db
-from models import Transaction
+from models import Account, ExportableMovement, Transaction
 from auth import require_admin
 from schemas import TransactionCreate, TransactionOut
 
@@ -21,7 +21,30 @@ def create_tx(payload: TransactionCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No se permiten fechas futuras",
         )
-    tx = Transaction(**payload.dict())
+    exportable_id = payload.exportable_movement_id
+    description = payload.description
+    if exportable_id is not None:
+        movement = db.get(ExportableMovement, exportable_id)
+        if not movement:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Movimiento Inkwell no encontrado",
+            )
+        billing_account = db.scalar(select(Account).where(Account.is_billing.is_(True)))
+        if not billing_account or payload.account_id != billing_account.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Los movimientos Inkwell solo pueden registrarse en la cuenta de facturación",
+            )
+        description = movement.description
+    tx = Transaction(
+        account_id=payload.account_id,
+        date=payload.date,
+        description=description,
+        amount=payload.amount,
+        notes=payload.notes,
+        exportable_movement_id=exportable_id,
+    )
     db.add(tx)
     db.commit()
     db.refresh(tx)
@@ -50,8 +73,28 @@ def update_tx(tx_id: int, payload: TransactionCreate, db: Session = Depends(get_
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No se permiten fechas futuras",
         )
-    for field, value in payload.dict().items():
-        setattr(tx, field, value)
+    exportable_id = payload.exportable_movement_id
+    description = payload.description
+    if exportable_id is not None:
+        movement = db.get(ExportableMovement, exportable_id)
+        if not movement:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Movimiento Inkwell no encontrado",
+            )
+        billing_account = db.scalar(select(Account).where(Account.is_billing.is_(True)))
+        if not billing_account or payload.account_id != billing_account.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Los movimientos Inkwell solo pueden registrarse en la cuenta de facturación",
+            )
+        description = movement.description
+    tx.account_id = payload.account_id
+    tx.date = payload.date
+    tx.description = description
+    tx.amount = payload.amount
+    tx.notes = payload.notes
+    tx.exportable_movement_id = exportable_id
     db.add(tx)
     db.commit()
     db.refresh(tx)

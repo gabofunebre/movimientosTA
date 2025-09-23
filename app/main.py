@@ -16,6 +16,7 @@ from routes.accounts import router as accounts_router
 from routes.health import router as health_router
 from routes.transactions import router as transactions_router
 from routes.frequents import router as frequents_router
+from routes.exportables import router as exportables_router
 from routes.invoices import router as invoices_router
 from routes.users import router as users_router
 from routes.billing_info import router as billing_info_router
@@ -81,6 +82,7 @@ app.include_router(health_router)
 app.include_router(accounts_router)
 app.include_router(transactions_router)
 app.include_router(frequents_router)
+app.include_router(exportables_router)
 app.include_router(invoices_router)
 app.include_router(users_router)
 app.include_router(billing_info_router)
