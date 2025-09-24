@@ -1,5 +1,8 @@
 from datetime import datetime, date
+import uuid
+from enum import Enum
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     Integer,
@@ -14,6 +17,9 @@ from sqlalchemy import (
     Enum as SqlEnum,
     Index,
     CheckConstraint,
+    UniqueConstraint,
+    Uuid,
+    JSON,
 )
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -133,5 +139,47 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class NotificationPriority(str, Enum):
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"
+
+
+class NotificationStatus(str, Enum):
+    UNREAD = "unread"
+    READ = "read"
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    __table_args__ = (
+        Index("ix_notifications_status_occurred_at", "status", "occurred_at"),
+        UniqueConstraint("idempotency_key", name="uq_notifications_idempotency"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4
+    )
+    type: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    deeplink: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    topic: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    priority: Mapped[NotificationPriority] = mapped_column(
+        SqlEnum(NotificationPriority), default=NotificationPriority.NORMAL, nullable=False
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[NotificationStatus] = mapped_column(
+        SqlEnum(NotificationStatus), default=NotificationStatus.UNREAD, nullable=False
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    variables: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    source_app: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 

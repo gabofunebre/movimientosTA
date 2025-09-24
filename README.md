@@ -9,6 +9,7 @@ Aplicación web basada en FastAPI para registrar movimientos de dinero y factura
 - **Facturas:** Para la cuenta de facturación se cargan facturas de compra y venta. El sistema calcula automáticamente IVA e IIBB.
 - **Transacciones frecuentes:** Plantillas para agilizar carga de movimientos repetitivos.
 - **Usuarios y permisos:** Registro de usuarios, inicio de sesión, aprobación por administrador y roles de administrador.
+- **Notificaciones:** Recepción y consulta de notificaciones interoperables con una app hermana mediante HMAC y claves de idempotencia.
 
 ## Guía rápida de uso
 
@@ -19,6 +20,23 @@ Aplicación web basada en FastAPI para registrar movimientos de dinero y factura
 5. Aprovecha las transacciones frecuentes para movimientos repetitivos.
 
 Consulta [USAGE.md](USAGE.md) para una guía más detallada.
+
+## Notificaciones interoperables
+
+La aplicación expone el endpoint `/notificaciones` que implementa el protocolo compartido con la app hermana.
+
+- **POST `/notificaciones`**
+  - Con encabezados `X-Timestamp`, `X-Idempotency-Key`, `X-Source-App` y `X-Signature` válidos se aceptan notificaciones entrantes y se guardan como *unread* (respuesta `202`).
+  - Con cuerpo `{"action": "ack", "id": "<uuid>"}` marca la notificación como leída y responde `200`.
+- **GET `/notificaciones`** permite listar, filtrar por estado/topic/type, paginar mediante cursor y opcionalmente incluir `unread_count`.
+
+Variables de entorno relevantes:
+
+- `NOTIF_SHARED_SECRET`: secreto compartido para firmar y validar notificaciones (obligatorio).
+- `NOTIF_SOURCE_APP`: identificador propio (`app-a` o `app-b`, default `app-a`).
+- `PEER_BASE_URL`: URL HTTPS base de la app hermana para envíos salientes.
+
+Existe además una tarea en segundo plano que elimina diariamente las notificaciones leídas con más de 90 días de antigüedad.
 
 ## Cálculos de moneda
 

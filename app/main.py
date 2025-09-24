@@ -21,6 +21,8 @@ from routes.invoices import router as invoices_router
 from routes.users import router as users_router
 from routes.billing_info import router as billing_info_router
 from routes.billing_movements import router as billing_movements_router
+from routes.notifications import router as notifications_router
+from services.notifications import start_notification_retention_job, stop_notification_retention_job
 
 load_dotenv()
 
@@ -31,6 +33,13 @@ app = FastAPI(title="Movimientos")
 @app.middleware("http")
 async def require_login_middleware(request: Request, call_next):
     path = request.url.path
+    if (
+        path == "/notificaciones"
+        and request.method.upper() == "POST"
+        and request.headers.get("X-Signature")
+    ):
+        return await call_next(request)
+
     allowed = {
         "/login",
         "/register",
@@ -77,6 +86,7 @@ def on_startup() -> None:
                 )
                 db.add(user)
                 db.commit()
+    start_notification_retention_job()
 
 app.include_router(health_router)
 app.include_router(accounts_router)
@@ -87,12 +97,18 @@ app.include_router(invoices_router)
 app.include_router(users_router)
 app.include_router(billing_info_router)
 app.include_router(billing_movements_router)
+app.include_router(notifications_router)
 
 app.mount(
     "/static",
     StaticFiles(directory=Path(__file__).parent / "static"),
     name="static",
 )
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    stop_notification_retention_job()
 
 
 @app.get("/", response_class=HTMLResponse)
