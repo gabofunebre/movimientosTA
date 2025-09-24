@@ -110,14 +110,10 @@ async def send_notification(
 
     if endpoint:
         url = endpoint
-        if not url.lower().startswith("https://"):
-            raise RuntimeError("Notification endpoint must use HTTPS")
     else:
         base_url = os.getenv("PEER_BASE_URL")
         if not base_url:
             raise RuntimeError("PEER_BASE_URL is not configured")
-        if not base_url.lower().startswith("https://"):
-            raise RuntimeError("PEER_BASE_URL must use HTTPS")
         url = f"{base_url.rstrip('/')}/notificaciones"
 
     payload = dict(payload)
