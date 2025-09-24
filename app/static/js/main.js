@@ -95,6 +95,18 @@ function populateAccountSelect(restrictToBilling = false, selectedId = null) {
   }
 }
 
+function resetConceptInputs() {
+  freqCheck.checked = false;
+  freqCheck.disabled = false;
+  inkwellCheck.checked = false;
+  inkwellCheck.disabled = false;
+  descInput.classList.remove('d-none');
+  freqSelect.classList.add('d-none');
+  inkwellSelect.classList.add('d-none');
+  freqSelect.innerHTML = '';
+  inkwellSelect.innerHTML = '';
+}
+
 function openModal(type) {
   form.reset();
   document.getElementById('form-title').textContent =
@@ -107,13 +119,7 @@ function openModal(type) {
   const today = new Date().toISOString().split('T')[0];
   form.date.max = today;
   form.date.value = today;
-  freqCheck.checked = false;
-  inkwellCheck.checked = false;
-  descInput.classList.remove('d-none');
-  freqSelect.classList.add('d-none');
-  inkwellSelect.classList.add('d-none');
-  freqSelect.innerHTML = '';
-  inkwellSelect.innerHTML = '';
+  resetConceptInputs();
   txModal.show();
 }
 
@@ -130,22 +136,21 @@ function openEditModal(tx) {
   const today = new Date().toISOString().split('T')[0];
   form.date.max = today;
   form.date.value = tx.date;
-  freqCheck.checked = false;
-  inkwellCheck.checked = false;
-  descInput.classList.remove('d-none');
-  freqSelect.classList.add('d-none');
-  inkwellSelect.classList.add('d-none');
+  resetConceptInputs();
   descInput.value = tx.description;
   form.amount.value = Math.abs(tx.amount);
   populateAccountSelect(false, tx.account_id);
   form.account_id.value = String(tx.account_id);
   if (tx.exportable_movement_id && exportableMap[tx.exportable_movement_id]) {
     inkwellCheck.checked = true;
-    populateInkwellSelect(String(tx.exportable_movement_id));
-    inkwellSelect.classList.remove('d-none');
-    descInput.classList.add('d-none');
-    applyExportable(exportableMap[tx.exportable_movement_id]);
-    populateAccountSelect(true, tx.account_id);
+    handleInkwellChange();
+    if (inkwellCheck.checked) {
+      populateInkwellSelect(String(tx.exportable_movement_id));
+      inkwellSelect.classList.remove('d-none');
+      descInput.classList.add('d-none');
+      applyExportable(exportableMap[tx.exportable_movement_id]);
+      populateAccountSelect(true, tx.account_id);
+    }
   }
   txModal.show();
 }
@@ -164,12 +169,10 @@ async function confirmDelete(tx) {
   }
 }
 
-document.getElementById('add-income').addEventListener('click', () => openModal('income'));
-document.getElementById('add-expense').addEventListener('click', () => openModal('expense'));
-searchBox.addEventListener('input', renderTransactions);
-freqCheck.addEventListener('change', () => {
+function handleFreqChange() {
   if (freqCheck.checked) {
     inkwellCheck.checked = false;
+    inkwellCheck.disabled = true;
     inkwellSelect.classList.add('d-none');
     populateFreqSelect();
     descInput.classList.add('d-none');
@@ -179,14 +182,15 @@ freqCheck.addEventListener('change', () => {
     }
     populateAccountSelect(false, form.account_id.value);
   } else {
+    inkwellCheck.disabled = false;
     freqSelect.classList.add('d-none');
     if (!inkwellCheck.checked) {
       descInput.classList.remove('d-none');
     }
   }
-});
+}
 
-inkwellCheck.addEventListener('change', () => {
+function handleInkwellChange() {
   const currentAccountId = form.account_id.value ? Number(form.account_id.value) : null;
   if (inkwellCheck.checked) {
     if (!billingAccountId) {
@@ -200,21 +204,30 @@ inkwellCheck.addEventListener('change', () => {
       return;
     }
     freqCheck.checked = false;
+    freqCheck.disabled = true;
     freqSelect.classList.add('d-none');
     populateInkwellSelect();
     inkwellSelect.classList.remove('d-none');
     descInput.classList.add('d-none');
     const movement = exportableMap[Number(inkwellSelect.value)];
     applyExportable(movement);
-    populateAccountSelect(true, billingAccountId);
+    const targetAccountId = currentAccountId !== null ? currentAccountId : billingAccountId;
+    populateAccountSelect(true, targetAccountId);
   } else {
+    freqCheck.disabled = false;
     inkwellSelect.classList.add('d-none');
     if (!freqCheck.checked) {
       descInput.classList.remove('d-none');
     }
     populateAccountSelect(false, currentAccountId);
   }
-});
+}
+
+document.getElementById('add-income').addEventListener('click', () => openModal('income'));
+document.getElementById('add-expense').addEventListener('click', () => openModal('expense'));
+searchBox.addEventListener('input', renderTransactions);
+freqCheck.addEventListener('change', handleFreqChange);
+inkwellCheck.addEventListener('change', handleInkwellChange);
 
 freqSelect.addEventListener('change', () => {
   const f = frequentMap[freqSelect.value];
