@@ -1,4 +1,7 @@
-from datetime import date
+import asyncio
+import logging
+import os
+from datetime import date, datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,8 +13,72 @@ from config.db import get_db
 from models import Account, ExportableMovement, Transaction
 from auth import require_admin
 from schemas import TransactionCreate, TransactionOut
+from services.notifications import send_notification
 
 router = APIRouter(prefix="/transactions")
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _notify_billing_movement(
+    *, transaction: Transaction, account: Account, movement: ExportableMovement
+) -> None:
+    endpoint = os.getenv("NOTIFICACIONES_INKWELL")
+    if not endpoint:
+        raise RuntimeError("NOTIFICACIONES_INKWELL no está configurada")
+    secret = os.getenv("SECRETO_NOTIFICACIONES_IW_TA")
+    if not secret:
+        raise RuntimeError("SECRETO_NOTIFICACIONES_IW_TA no está configurado")
+    source_app = os.getenv("NOTIFICACIONES_INKWELL_SOURCE_APP", "movimientos-ta")
+
+    occurred_at = getattr(transaction, "created_at", None)
+    if not isinstance(occurred_at, datetime):
+        occurred_at = datetime.now(timezone.utc)
+
+    account_name = getattr(account, "name", "")
+    body = (
+        "Se registró un movimiento exportable en la cuenta de facturación "
+        f"{account_name}."
+        if account_name
+        else "Se registró un movimiento exportable en la cuenta de facturación."
+    )
+
+    currency = getattr(account, "currency", None)
+    currency_value = getattr(currency, "value", str(currency)) if currency else None
+
+    variables: dict[str, object] = {
+        "transaction_id": transaction.id,
+        "account_id": transaction.account_id,
+        "account_name": account_name or None,
+        "account_currency": currency_value,
+        "movement_id": movement.id,
+        "movement_description": movement.description,
+        "description": transaction.description,
+        "amount": format(transaction.amount, "f"),
+        "date": transaction.date.isoformat(),
+    }
+    if transaction.notes:
+        variables["notes"] = transaction.notes
+
+    payload = {
+        "type": "movimiento_cta_facturacion_iw",
+        "title": f"Movimiento exportable: {movement.description}",
+        "body": body,
+        "deeplink": None,
+        "topic": "inkwell",
+        "priority": "normal",
+        "occurred_at": occurred_at,
+        "variables": variables,
+    }
+
+    asyncio.run(
+        send_notification(
+            payload,
+            endpoint=endpoint,
+            secret=secret,
+            source_app=source_app,
+        )
+    )
 
 
 @router.post("", response_model=TransactionOut)
@@ -23,6 +90,8 @@ def create_tx(payload: TransactionCreate, db: Session = Depends(get_db)):
         )
     exportable_id = payload.exportable_movement_id
     description = payload.description
+    movement: ExportableMovement | None = None
+    billing_account: Account | None = None
     if exportable_id is not None:
         movement = db.get(ExportableMovement, exportable_id)
         if not movement:
@@ -48,6 +117,18 @@ def create_tx(payload: TransactionCreate, db: Session = Depends(get_db)):
     db.add(tx)
     db.commit()
     db.refresh(tx)
+
+    if movement is not None and billing_account is not None:
+        try:
+            _notify_billing_movement(
+                transaction=tx, account=billing_account, movement=movement
+            )
+        except Exception:
+            LOGGER.exception(
+                "Error enviando la notificación de movimiento Inkwell para la transacción %s",
+                tx.id,
+            )
+
     return tx
 
 
