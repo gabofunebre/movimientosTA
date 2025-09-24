@@ -3,6 +3,7 @@ uvicorn[standard]
 SQLAlchemy>=2
 psycopg2-binary
 pydantic
+httpx
 aiofiles
 jinja2
 python-multipart
