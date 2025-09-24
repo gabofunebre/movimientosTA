@@ -98,15 +98,27 @@ def _json_dumps(payload: dict[str, Any]) -> str:
 
 
 async def send_notification(
-    payload: dict[str, Any], *, client: httpx.AsyncClient | None = None, retries: int = 3
+    payload: dict[str, Any],
+    *,
+    client: httpx.AsyncClient | None = None,
+    retries: int = 3,
+    endpoint: str | None = None,
+    secret: str | None = None,
+    source_app: str | None = None,
 ) -> httpx.Response:
     """Send a notification to the sibling application."""
 
-    base_url = os.getenv("PEER_BASE_URL")
-    if not base_url:
-        raise RuntimeError("PEER_BASE_URL is not configured")
-    if not base_url.lower().startswith("https://"):
-        raise RuntimeError("PEER_BASE_URL must use HTTPS")
+    if endpoint:
+        url = endpoint
+        if not url.lower().startswith("https://"):
+            raise RuntimeError("Notification endpoint must use HTTPS")
+    else:
+        base_url = os.getenv("PEER_BASE_URL")
+        if not base_url:
+            raise RuntimeError("PEER_BASE_URL is not configured")
+        if not base_url.lower().startswith("https://"):
+            raise RuntimeError("PEER_BASE_URL must use HTTPS")
+        url = f"{base_url.rstrip('/')}/notificaciones"
 
     payload = dict(payload)
     occurred_at = payload.get("occurred_at")
@@ -119,16 +131,21 @@ async def send_notification(
             occurred_at = occurred_at.astimezone(timezone.utc)
         payload["occurred_at"] = occurred_at.isoformat()
 
-    secret = require_shared_secret()
+    if secret is None:
+        secret = require_shared_secret()
+    elif not secret:
+        raise RuntimeError("Notification secret must not be empty")
     idempotency_key = str(uuid.uuid4())
     timestamp = str(int(time.time()))
     body_text = _json_dumps(payload)
     signature = compute_signature(secret, timestamp, body_text.encode("utf-8"))
+    if source_app is None:
+        source_app = _require_source_app()
     headers = {
         "Content-Type": "application/json",
         "X-Timestamp": timestamp,
         "X-Idempotency-Key": idempotency_key,
-        "X-Source-App": _require_source_app(),
+        "X-Source-App": source_app,
         "X-Signature": signature,
     }
 
@@ -143,7 +160,7 @@ async def send_notification(
         while attempt < retries:
             try:
                 response = await client.post(
-                    f"{base_url.rstrip('/')}/notificaciones",
+                    url,
                     content=body_text.encode("utf-8"),
                     headers=headers,
                 )
