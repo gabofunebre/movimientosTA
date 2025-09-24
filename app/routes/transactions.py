@@ -30,6 +30,7 @@ def _notify_billing_movement(
     if not secret:
         raise RuntimeError("SECRETO_NOTIFICACIONES_IW_TA no está configurado")
     source_app = os.getenv("NOTIFICACIONES_INKWELL_SOURCE_APP", "movimientos-ta")
+    algorithm = os.getenv("NOTIFICACIONES_KEY_ALGORITHM")
 
     occurred_at = getattr(transaction, "created_at", None)
     if not isinstance(occurred_at, datetime):
@@ -77,6 +78,7 @@ def _notify_billing_movement(
             endpoint=endpoint,
             secret=secret,
             source_app=source_app,
+            algorithm=algorithm,
         )
     )
 
