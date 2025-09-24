@@ -24,7 +24,12 @@ from models import Notification, NotificationStatus
 
 LOGGER = logging.getLogger(__name__)
 
-SIGNATURE_PREFIX = "sha256="
+DEFAULT_SIGNATURE_ALGORITHM = "HS256"
+_SUPPORTED_SIGNATURE_ALGORITHMS: dict[str, tuple[str, Any]] = {
+    "HS256": ("sha256", hashlib.sha256),
+    "HS384": ("sha384", hashlib.sha384),
+    "HS512": ("sha512", hashlib.sha512),
+}
 TIMESTAMP_WINDOW_SECONDS = 300
 INBOUND_RATE_LIMIT = 60
 INBOUND_RATE_WINDOW_SECONDS = 60
@@ -47,16 +52,46 @@ def _require_source_app() -> str:
     return app_name
 
 
-def compute_signature(secret: str, timestamp: str, body: bytes) -> str:
+def _resolve_signature_algorithm(algorithm: str | None = None) -> tuple[str, Any]:
+    if algorithm is None:
+        algorithm_value = os.getenv(
+            "NOTIFICACIONES_KEY_ALGORITHM", DEFAULT_SIGNATURE_ALGORITHM
+        )
+    else:
+        algorithm_value = algorithm
+    algorithm_value = (algorithm_value or "").strip()
+    if not algorithm_value:
+        algorithm_value = DEFAULT_SIGNATURE_ALGORITHM
+    algorithm_key = algorithm_value.upper()
+    try:
+        label, factory = _SUPPORTED_SIGNATURE_ALGORITHMS[algorithm_key]
+    except KeyError as exc:  # pragma: no cover - invalid configuration branch
+        raise RuntimeError(
+            "Unsupported notification signing algorithm: " f"{algorithm_value}"
+        ) from exc
+    return label, factory
+
+
+def compute_signature(
+    secret: str, timestamp: str, body: bytes, *, algorithm: str | None = None
+) -> str:
     """Return the expected HMAC signature for the payload."""
 
+    label, factory = _resolve_signature_algorithm(algorithm)
     message = timestamp.encode("utf-8") + b"." + body
-    digest = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
-    return f"{SIGNATURE_PREFIX}{digest}"
+    digest = hmac.new(secret.encode("utf-8"), message, factory).hexdigest()
+    return f"{label}={digest}"
 
 
-def verify_signature(secret: str, timestamp: str, body: bytes, provided: str) -> bool:
-    expected = compute_signature(secret, timestamp, body)
+def verify_signature(
+    secret: str,
+    timestamp: str,
+    body: bytes,
+    provided: str,
+    *,
+    algorithm: str | None = None,
+) -> bool:
+    expected = compute_signature(secret, timestamp, body, algorithm=algorithm)
     return hmac.compare_digest(expected, provided)
 
 
@@ -105,6 +140,7 @@ async def send_notification(
     endpoint: str | None = None,
     secret: str | None = None,
     source_app: str | None = None,
+    algorithm: str | None = None,
 ) -> httpx.Response:
     """Send a notification to the sibling application."""
 
@@ -134,7 +170,9 @@ async def send_notification(
     idempotency_key = str(uuid.uuid4())
     timestamp = str(int(time.time()))
     body_text = _json_dumps(payload)
-    signature = compute_signature(secret, timestamp, body_text.encode("utf-8"))
+    signature = compute_signature(
+        secret, timestamp, body_text.encode("utf-8"), algorithm=algorithm
+    )
     if source_app is None:
         source_app = _require_source_app()
     headers = {
