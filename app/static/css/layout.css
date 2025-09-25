@@ -169,13 +169,22 @@ body {
 
 .table-search-group {
   width: min(40rem, 100%);
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
 }
 
 #search-box {
-  width: 100%;
+  flex: 1 1 auto;
+  width: auto;
   max-width: none;
   font-size: calc(1.1rem + 2pt);
   margin: 0;
+}
+
+.table-search-group .btn-filter {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .btn-filter {
