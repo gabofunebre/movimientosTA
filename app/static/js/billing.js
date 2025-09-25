@@ -14,6 +14,20 @@ const form = document.getElementById('inv-form');
 const alertBox = document.getElementById('inv-alert');
 const searchBox = document.getElementById('search-box');
 const headers = document.querySelectorAll('#inv-table thead th.sortable');
+const filterBtn = document.getElementById('inv-filter-btn');
+const filterModalEl = document.getElementById('inv-filter-modal');
+const filterForm = document.getElementById('inv-filter-form');
+const clearFiltersBtn = document.getElementById('inv-clear-filters');
+const filterModal = filterModalEl ? new bootstrap.Modal(filterModalEl) : null;
+const filterStartInput = filterForm
+  ? filterForm.querySelector('[name="start_date"]')
+  : null;
+const filterEndInput = filterForm
+  ? filterForm.querySelector('[name="end_date"]')
+  : null;
+const filterTypeSelect = filterForm
+  ? filterForm.querySelector('[name="type"]')
+  : null;
 const amountInput = form.amount;
 const ivaPercentInput = form.iva_percent;
 const ivaAmountInput = form.iva_amount;
@@ -30,6 +44,12 @@ let billingAccount = null;
 let invoices = [];
 let sortColumn = 1;
 let sortAsc = false;
+const filters = {
+  start_date: '',
+  end_date: '',
+  type: '',
+};
+let hasMore = true;
 
 function renderInvoices() {
   const q = searchBox.value.trim().toLowerCase();
@@ -88,13 +108,32 @@ ivaPercentInput.addEventListener('input', recalcTaxes);
 iibbPercentInput.addEventListener('input', recalcTaxes);
 
 async function loadMore() {
-  if (loading) return;
+  if (loading || !hasMore) return;
   loading = true;
-  const data = await fetchInvoices(limit, offset);
-  invoices = invoices.concat(data);
-  offset += data.length;
-  renderInvoices();
-  loading = false;
+  try {
+    const data = await fetchInvoices(limit, offset, filters);
+    invoices = invoices.concat(data);
+    offset += data.length;
+    if (data.length < limit) {
+      hasMore = false;
+    }
+    renderInvoices();
+  } finally {
+    loading = false;
+  }
+}
+
+async function reloadInvoices() {
+  invoices = [];
+  offset = 0;
+  hasMore = true;
+  await loadMore();
+}
+
+function updateFilterButtonState() {
+  if (!filterBtn) return;
+  const active = Boolean(filters.start_date || filters.end_date || filters.type);
+  filterBtn.classList.toggle('btn-filter-active', active);
 }
 
 function openModal(type) {
@@ -125,6 +164,46 @@ function openModal(type) {
 document.getElementById('add-sale').addEventListener('click', () => openModal('sale'));
 document.getElementById('add-purchase').addEventListener('click', () => openModal('purchase'));
 searchBox.addEventListener('input', renderInvoices);
+if (filterBtn && filterModal && filterForm) {
+  filterBtn.addEventListener('click', () => {
+    if (filterStartInput) filterStartInput.value = filters.start_date;
+    if (filterEndInput) filterEndInput.value = filters.end_date;
+    if (filterTypeSelect) {
+      filterTypeSelect.value = filters.type || '';
+    }
+    filterModal.show();
+  });
+
+  filterForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const start = filterStartInput ? filterStartInput.value : '';
+    const end = filterEndInput ? filterEndInput.value : '';
+    if (start && end && start > end) {
+      alert('La fecha de inicio no puede ser mayor que la fecha fin');
+      return;
+    }
+    filters.start_date = start;
+    filters.end_date = end;
+    filters.type = filterTypeSelect ? filterTypeSelect.value : '';
+    filterModal.hide();
+    updateFilterButtonState();
+    await reloadInvoices();
+  });
+
+  if (clearFiltersBtn) {
+    clearFiltersBtn.addEventListener('click', async () => {
+      if (filterForm) {
+        filterForm.reset();
+      }
+      filters.start_date = '';
+      filters.end_date = '';
+      filters.type = '';
+      filterModal.hide();
+      updateFilterButtonState();
+      await reloadInvoices();
+    });
+  }
+}
 
 headers.forEach((th, index) => {
   th.addEventListener('click', () => {
@@ -169,11 +248,11 @@ container.addEventListener('scroll', () => {
       number: data.get('number'),
       description: data.get('description'),
       amount,
-    account_id: billingAccount.id,
-    type: form.dataset.type,
-    iva_percent: parseFloat(data.get('iva_percent')) || 0,
-    iibb_percent: isPurchase ? 0 : parseFloat(data.get('iibb_percent')) || 0
-  };
+      account_id: billingAccount.id,
+      type: form.dataset.type,
+      iva_percent: parseFloat(data.get('iva_percent')) || 0,
+      iibb_percent: isPurchase ? 0 : parseFloat(data.get('iibb_percent')) || 0,
+    };
   const today = new Date().toISOString().split('T')[0];
   if (payload.date > today) {
     alertBox.classList.remove('d-none', 'alert-success', 'alert-danger');
@@ -189,9 +268,7 @@ container.addEventListener('scroll', () => {
   if (result.ok) {
     alertBox.classList.add('alert-success');
     alertBox.textContent = 'Factura guardada';
-    invoices = [];
-    offset = 0;
-    await loadMore();
+    await reloadInvoices();
     setTimeout(() => {
       invModal.hide();
       alertBox.classList.add('d-none');
@@ -206,6 +283,7 @@ container.addEventListener('scroll', () => {
   accounts = await fetchAccounts(true);
   accountMap = Object.fromEntries(accounts.map(a => [a.id, a]));
   billingAccount = accounts.find(a => a.is_billing);
-  await loadMore();
+  updateFilterButtonState();
+  await reloadInvoices();
   updateSortIcons();
 })();
