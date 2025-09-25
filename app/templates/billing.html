@@ -1,10 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
   <div id="table-container" class="flex-grow-1 overflow-auto">
-    <div id="table-controls" class="d-flex align-items-center justify-content-center my-4">
-      <button id="add-sale" class="btn action-btn d-inline-flex align-items-center"><i class="bi bi-file-earmark-arrow-up me-1"></i>Venta</button>
-      <input id="search-box" class="form-control" type="search" placeholder="Buscar">
-      <button id="add-purchase" class="btn action-btn d-inline-flex align-items-center"><i class="bi bi-file-earmark-arrow-down me-1"></i>Compra</button>
+    <div id="table-controls" class="d-flex align-items-center justify-content-center my-4 flex-wrap">
+      <div class="control-button">
+        <button id="add-sale" class="btn action-btn d-inline-flex align-items-center"><i class="bi bi-file-earmark-arrow-up me-1"></i>Venta</button>
+      </div>
+      <div class="search-wrapper">
+        <div class="input-group table-search-group">
+          <input id="search-box" class="form-control" type="search" placeholder="Buscar">
+          <button id="inv-filter-btn" class="btn btn-filter d-inline-flex align-items-center" type="button"><i class="bi bi-funnel me-1"></i>Filtros</button>
+        </div>
+      </div>
+      <div class="control-button">
+        <button id="add-purchase" class="btn action-btn d-inline-flex align-items-center"><i class="bi bi-file-earmark-arrow-down me-1"></i>Compra</button>
+      </div>
     </div>
     <div id="inv-table-wrapper" class="table-responsive">
       <table id="inv-table" class="table table-striped table-sm mb-0 w-100">
@@ -91,6 +100,43 @@
           <div class="modal-footer">
             <button type="submit" class="btn btn-primary">Guardar</button>
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="modal fade" id="inv-filter-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form id="inv-filter-form">
+          <div class="modal-header">
+            <h5 class="modal-title">Filtros de facturación</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="inv-filter-start">Fecha inicio</label>
+                <input type="date" id="inv-filter-start" name="start_date" class="form-control">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="inv-filter-end">Fecha fin</label>
+                <input type="date" id="inv-filter-end" name="end_date" class="form-control">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="inv-filter-type">Tipo</label>
+                <select id="inv-filter-type" name="type" class="form-select">
+                  <option value="">Todos</option>
+                  <option value="sale">Ventas</option>
+                  <option value="purchase">Compras</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" id="inv-clear-filters">Limpiar</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            <button type="submit" class="btn btn-primary">Aplicar</button>
           </div>
         </form>
       </div>

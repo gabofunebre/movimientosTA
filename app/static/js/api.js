@@ -3,13 +3,27 @@ export async function fetchAccounts(includeInactive = false) {
   return res.json();
 }
 
-export async function fetchTransactions(limit, offset) {
-  const res = await fetch(`/transactions?limit=${limit}&offset=${offset}`);
+export async function fetchTransactions(limit, offset, filters = {}) {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  if (filters.start_date) params.append('start_date', filters.start_date);
+  if (filters.end_date) params.append('end_date', filters.end_date);
+  if (filters.account_id) params.append('account_id', filters.account_id);
+  const res = await fetch(`/transactions?${params.toString()}`);
   return res.json();
 }
 
-export async function fetchInvoices(limit, offset) {
-  const res = await fetch(`/invoices?limit=${limit}&offset=${offset}`);
+export async function fetchInvoices(limit, offset, filters = {}) {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  if (filters.start_date) params.append('start_date', filters.start_date);
+  if (filters.end_date) params.append('end_date', filters.end_date);
+  if (filters.type) params.append('type', filters.type);
+  const res = await fetch(`/invoices?${params.toString()}`);
   return res.json();
 }
 

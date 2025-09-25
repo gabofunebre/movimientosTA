@@ -22,6 +22,18 @@ const form = document.getElementById('tx-form');
 const alertBox = document.getElementById('tx-alert');
 const searchBox = document.getElementById('search-box');
 const headers = document.querySelectorAll('#tx-table thead th.sortable');
+const filterBtn = document.getElementById('tx-filter-btn');
+const filterModalEl = document.getElementById('tx-filter-modal');
+const filterForm = document.getElementById('tx-filter-form');
+const filterAccountSelect = document.getElementById('tx-filter-account');
+const clearFiltersBtn = document.getElementById('tx-clear-filters');
+const filterModal = filterModalEl ? new bootstrap.Modal(filterModalEl) : null;
+const filterStartInput = filterForm
+  ? filterForm.querySelector('[name="start_date"]')
+  : null;
+const filterEndInput = filterForm
+  ? filterForm.querySelector('[name="end_date"]')
+  : null;
 const freqCheck = document.getElementById('freq-check');
 const freqSelect = document.getElementById('freq-select');
 const descInput = document.getElementById('desc-input');
@@ -41,6 +53,12 @@ let frequentMap = {};
 let exportables = [];
 let exportableMap = {};
 let billingAccountId = null;
+const filters = {
+  start_date: '',
+  end_date: '',
+  account_id: '',
+};
+let hasMore = true;
 
 function renderTransactions() {
   const q = searchBox.value.trim().toLowerCase();
@@ -73,13 +91,59 @@ function renderTransactions() {
 }
 
 async function loadMore() {
-  if (loading) return;
+  if (loading || !hasMore) return;
   loading = true;
-  const data = await fetchTransactions(limit, offset);
-  transactions = transactions.concat(data);
-  offset += data.length;
-  renderTransactions();
-  loading = false;
+  try {
+    const data = await fetchTransactions(limit, offset, filters);
+    transactions = transactions.concat(data);
+    offset += data.length;
+    if (data.length < limit) {
+      hasMore = false;
+    }
+    renderTransactions();
+  } finally {
+    loading = false;
+  }
+}
+
+async function reloadTransactions() {
+  transactions = [];
+  offset = 0;
+  hasMore = true;
+  await loadMore();
+}
+
+function updateFilterButtonState() {
+  if (!filterBtn) return;
+  const active = Boolean(
+    filters.start_date || filters.end_date || filters.account_id
+  );
+  filterBtn.classList.toggle('btn-filter-active', active);
+}
+
+function populateFilterAccounts() {
+  if (!filterAccountSelect) return;
+  const currentValue = filters.account_id;
+  filterAccountSelect.innerHTML = '';
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = 'Todas';
+  filterAccountSelect.appendChild(defaultOption);
+  const sortedAccounts = [...accounts].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+  sortedAccounts.forEach(account => {
+    const opt = document.createElement('option');
+    opt.value = String(account.id);
+    opt.textContent = account.name;
+    filterAccountSelect.appendChild(opt);
+  });
+  if (currentValue) {
+    filterAccountSelect.value = currentValue;
+    if (filterAccountSelect.value !== currentValue) {
+      filters.account_id = '';
+    }
+  }
 }
 
 function populateAccountSelect(restrictToBilling = false, selectedId = null) {
@@ -161,9 +225,7 @@ async function confirmDelete(tx) {
   const result = await deleteTransaction(tx.id);
   hideOverlay();
   if (result.ok) {
-    transactions = [];
-    offset = 0;
-    await loadMore();
+    await reloadTransactions();
   } else {
     alert(result.error || 'Error al eliminar');
   }
@@ -226,6 +288,46 @@ function handleInkwellChange() {
 document.getElementById('add-income').addEventListener('click', () => openModal('income'));
 document.getElementById('add-expense').addEventListener('click', () => openModal('expense'));
 searchBox.addEventListener('input', renderTransactions);
+if (filterBtn && filterModal && filterForm) {
+  filterBtn.addEventListener('click', () => {
+    if (filterStartInput) filterStartInput.value = filters.start_date;
+    if (filterEndInput) filterEndInput.value = filters.end_date;
+    if (filterAccountSelect) {
+      filterAccountSelect.value = filters.account_id || '';
+    }
+    filterModal.show();
+  });
+
+  filterForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const start = filterStartInput ? filterStartInput.value : '';
+    const end = filterEndInput ? filterEndInput.value : '';
+    if (start && end && start > end) {
+      alert('La fecha de inicio no puede ser mayor que la fecha fin');
+      return;
+    }
+    filters.start_date = start;
+    filters.end_date = end;
+    filters.account_id = filterAccountSelect ? filterAccountSelect.value : '';
+    filterModal.hide();
+    updateFilterButtonState();
+    await reloadTransactions();
+  });
+
+  if (clearFiltersBtn) {
+    clearFiltersBtn.addEventListener('click', async () => {
+      if (filterForm) {
+        filterForm.reset();
+      }
+      filters.start_date = '';
+      filters.end_date = '';
+      filters.account_id = '';
+      filterModal.hide();
+      updateFilterButtonState();
+      await reloadTransactions();
+    });
+  }
+}
 freqCheck.addEventListener('change', handleFreqChange);
 inkwellCheck.addEventListener('change', handleInkwellChange);
 
@@ -356,9 +458,7 @@ form.addEventListener('submit', async e => {
   if (result.ok) {
     alertBox.classList.add('alert-success');
     alertBox.textContent = 'Movimiento guardado';
-    transactions = [];
-    offset = 0;
-    await loadMore();
+    await reloadTransactions();
     setTimeout(() => {
       txModal.hide();
       alertBox.classList.add('d-none');
@@ -378,6 +478,8 @@ form.addEventListener('submit', async e => {
   frequentMap = Object.fromEntries(frequents.map(f => [f.id, f]));
   exportables = await fetchExportables();
   exportableMap = Object.fromEntries(exportables.map(m => [m.id, m]));
-  await loadMore();
+  populateFilterAccounts();
+  updateFilterButtonState();
+  await reloadTransactions();
   updateSortIcons();
 })();

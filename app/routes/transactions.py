@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 from datetime import date, datetime, timezone
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
@@ -135,13 +135,27 @@ def create_tx(payload: TransactionCreate, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=List[TransactionOut])
-def list_transactions(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
-    stmt = (
-        select(Transaction)
-        .order_by(Transaction.date.desc(), Transaction.id.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+def list_transactions(
+    limit: int = 50,
+    offset: int = 0,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    account_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La fecha de inicio no puede ser mayor que la fecha fin",
+        )
+    stmt = select(Transaction)
+    if start_date:
+        stmt = stmt.where(Transaction.date >= start_date)
+    if end_date:
+        stmt = stmt.where(Transaction.date <= end_date)
+    if account_id:
+        stmt = stmt.where(Transaction.account_id == account_id)
+    stmt = stmt.order_by(Transaction.date.desc(), Transaction.id.desc()).limit(limit).offset(offset)
     rows = db.scalars(stmt).all()
     return rows
 
