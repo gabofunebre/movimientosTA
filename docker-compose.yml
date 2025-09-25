@@ -1,9 +1,10 @@
 services:
   db:
     image: postgres:17
-    container_name: TA-mov-db
+    container_name: TA_mov-db
     env_file:
       - .env
+    restart: unless-stopped
     volumes:
       - ${POSTGRES_DATA_PATH}:/var/lib/postgresql/data
     networks:
@@ -19,9 +20,12 @@ services:
     restart: unless-stopped
     networks:
       - TA_internal
-      - cloudflared_net
+      - TA_tunn_net
+      - TA-IW_NET
 
 networks:
   TA_internal:
-  cloudflared_net:
+  TA_tunn_net:
+    external: true
+  TA-IW_NET:
     external: true
