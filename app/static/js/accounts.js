@@ -1,6 +1,11 @@
-import { fetchAccountBalances, fetchAccountSummary } from './api.js?v=1';
+import {
+  fetchAccountBalances,
+  fetchAccountSummary,
+  fetchInkwellBillingData
+} from './api.js?v=1';
 import { showOverlay, hideOverlay, formatCurrency } from './ui.js?v=1';
-import { CURRENCY_SYMBOLS } from './constants.js';
+import { CURRENCY_SYMBOLS } from './constants.js?v=1';
+import { calculateInkwellTotals } from './inkwell_calculator.js?v=1';
 
 const tbody = document.querySelector('#accounts-table tbody');
 const refreshBtn = document.getElementById('refresh-accounts');
@@ -35,8 +40,21 @@ async function toggleDetails(row, acc) {
   const existing = tbody.querySelector('.details');
   if (existing) existing.remove();
   showOverlay();
-  const summary = await fetchAccountSummary(acc.account_id);
-  hideOverlay();
+  let summary;
+  let inkwellTotals = null;
+  try {
+    summary = await fetchAccountSummary(acc.account_id);
+    if (summary.is_billing) {
+      try {
+        const billingData = await fetchInkwellBillingData();
+        inkwellTotals = calculateInkwellTotals(billingData, summary);
+      } catch (error) {
+        console.error('No se pudo calcular el disponible Inkwell', error);
+      }
+    }
+  } finally {
+    hideOverlay();
+  }
   const symbol = CURRENCY_SYMBOLS[acc.currency] || '';
   const detailTr = document.createElement('tr');
   detailTr.classList.add('details');
@@ -47,7 +65,14 @@ async function toggleDetails(row, acc) {
     Number(summary.opening_balance) +
     Number(summary.income_balance) -
     Number(summary.expense_balance);
-  const total = balance;
+  const inkwellIncome = inkwellTotals ? inkwellTotals.income : Number(summary.inkwell_income || 0);
+  const inkwellExpense = inkwellTotals ? inkwellTotals.expense : Number(summary.inkwell_expense || 0);
+  const inkwellAvailable = inkwellTotals
+    ? inkwellTotals.available
+    : Number(summary.inkwell_available || 0);
+  const total = summary.is_billing
+    ? Number(summary.income_balance) - Number(summary.expense_balance) - inkwellAvailable
+    : balance;
 
   let html = '<div class="container text-start">';
   html += '<div class="row g-4 align-items-start">';
@@ -58,9 +83,6 @@ async function toggleDetails(row, acc) {
   html += `<p><strong>Balance:</strong> <span class="text-dark fst-italic">${symbol} ${formatCurrency(balance)}</span></p>`;
   html += '</div>';
   if (summary.is_billing) {
-    const inkwellIncome = Number(summary.inkwell_income || 0);
-    const inkwellExpense = Number(summary.inkwell_expense || 0);
-    const inkwellAvailable = Number(summary.inkwell_available || 0);
     html += '<div class="col-12 col-lg-6">';
     html += '<div class="d-flex justify-content-between align-items-start mb-2">';
     html += '<h5 class="mb-0">Inkwell</h5>';
