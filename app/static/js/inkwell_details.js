@@ -26,6 +26,7 @@ function attachRowInteraction(row, onActivate) {
   });
 }
 
+
 function createDetailList(items, { wrapperClasses = [] } = {}) {
   const wrapper = document.createElement('div');
   wrapper.classList.add('border', 'rounded', 'p-3');
@@ -65,6 +66,7 @@ function createDetailList(items, { wrapperClasses = [] } = {}) {
   return wrapper;
 }
 
+
 function showDocumentModal(title, items, options) {
   if (!docModal || !docModalTitle || !docModalBody) return;
   docModalTitle.textContent = title;
@@ -83,6 +85,7 @@ function getInvoiceTypeText(type) {
   return type;
 }
 
+
 function showInvoiceDetails(invoice) {
   const baseAmount = Number(invoice.amount ?? 0);
   const ivaAmount = Number(invoice.iva_amount ?? 0);
@@ -91,9 +94,11 @@ function showInvoiceDetails(invoice) {
   const total = baseAmount + ivaAmount + iibbAmount + percepcionesAmount;
   const numberLabel = invoice.number ? `Factura ${invoice.number}` : `Factura #${invoice.id}`;
 
+
   const items = [
     { label: 'Fecha', value: formatDate(invoice.date) },
     { label: 'Tipo', value: getInvoiceTypeText(invoice.type) },
+
     {
       label: 'Concepto',
       value: invoice.description && invoice.description.trim() ? invoice.description : '—',
@@ -101,6 +106,7 @@ function showInvoiceDetails(invoice) {
       wrap: true
     },
     { label: 'Monto sin impuesto', value: `$ ${formatCurrency(baseAmount)}` },
+
     { label: 'IVA', value: `$ ${formatCurrency(ivaAmount)}` }
   ];
 
