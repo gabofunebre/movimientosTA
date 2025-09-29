@@ -22,6 +22,7 @@ from routes.users import router as users_router
 from routes.billing_info import router as billing_info_router
 from routes.billing_movements import router as billing_movements_router
 from routes.notifications import router as notifications_router
+from routes.inkwell import router as inkwell_router
 from services.notifications import start_notification_retention_job, stop_notification_retention_job
 
 load_dotenv()
@@ -98,6 +99,7 @@ app.include_router(users_router)
 app.include_router(billing_info_router)
 app.include_router(billing_movements_router)
 app.include_router(notifications_router)
+app.include_router(inkwell_router)
 
 app.mount(
     "/static",
@@ -164,6 +166,21 @@ async def billing(request: Request, db: Session = Depends(get_db), user=Depends(
     return templates.TemplateResponse(
         "billing.html",
         {"request": request, "title": title, "header_title": header_title, "user": user},
+    )
+
+
+@app.get("/inkwell.html", response_class=HTMLResponse)
+async def inkwell_details_page(
+    request: Request, user=Depends(get_current_user)
+):
+    return templates.TemplateResponse(
+        "inkwell_details.html",
+        {
+            "request": request,
+            "title": "Detalles Inkwell",
+            "header_title": "Detalles Inkwell",
+            "user": user,
+        },
     )
 
 

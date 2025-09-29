@@ -238,6 +238,8 @@ def account_summary(account_id: int, db: Session = Depends(get_db)):
     )
     row = db.execute(stmt).one()
     iva_pur = iva_sale = iibb = Decimal("0")
+    inkwell_income = Decimal("0")
+    inkwell_expense = Decimal("0")
     if row.is_billing:
         tax_stmt = (
             select(
@@ -266,11 +268,41 @@ def account_summary(account_id: int, db: Session = Depends(get_db)):
         iva_pur = tax_row.iva_pur
         iva_sale = tax_row.iva_sale
         iibb = tax_row.iibb
+        inkwell_stmt = (
+            select(
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (Transaction.amount > 0, Transaction.amount),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("income"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (Transaction.amount < 0, -Transaction.amount),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("expense"),
+            )
+            .where(Transaction.account_id == account_id)
+            .where(Transaction.exportable_movement_id.is_not(None))
+        )
+        inkwell_row = db.execute(inkwell_stmt).one()
+        inkwell_income = inkwell_row.income
+        inkwell_expense = inkwell_row.expense
     return AccountSummary(
         opening_balance=row.opening_balance,
         income_balance=row.income,
         expense_balance=row.expense,
         is_billing=row.is_billing,
+        inkwell_income=inkwell_income,
+        inkwell_expense=inkwell_expense,
+        inkwell_available=inkwell_income - inkwell_expense,
         iva_purchases=iva_pur if row.is_billing else None,
         iva_sales=iva_sale if row.is_billing else None,
         iibb=iibb if row.is_billing else None,
