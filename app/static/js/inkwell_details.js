@@ -26,9 +26,15 @@ function attachRowInteraction(row, onActivate) {
   });
 }
 
-function createDetailList(items) {
+
+function createDetailList(items, { wrapperClasses = [] } = {}) {
   const wrapper = document.createElement('div');
-  wrapper.classList.add('border', 'rounded', 'p-3', 'bg-light');
+  wrapper.classList.add('border', 'rounded', 'p-3');
+  if (wrapperClasses.length) {
+    wrapper.classList.add(...wrapperClasses);
+  } else {
+    wrapper.classList.add('bg-light');
+  }
 
   const dl = document.createElement('dl');
   dl.classList.add('row', 'mb-0', 'gy-1');
@@ -60,11 +66,12 @@ function createDetailList(items) {
   return wrapper;
 }
 
-function showDocumentModal(title, items) {
+
+function showDocumentModal(title, items, options) {
   if (!docModal || !docModalTitle || !docModalBody) return;
   docModalTitle.textContent = title;
   docModalBody.innerHTML = '';
-  docModalBody.appendChild(createDetailList(items));
+  docModalBody.appendChild(createDetailList(items, options));
   docModal.show();
 }
 
@@ -78,27 +85,6 @@ function getInvoiceTypeText(type) {
   return type;
 }
 
-function resolveAccountName(invoice) {
-  const { account } = invoice;
-  if (account && typeof account === 'object') {
-    if ('name' in account && account.name) {
-      return account.name;
-    }
-    if ('title' in account && account.title) {
-      return account.title;
-    }
-  }
-  if (typeof account === 'string' && account.trim()) {
-    return account;
-  }
-  if (invoice.account_name) {
-    return invoice.account_name;
-  }
-  if (invoice.account_id) {
-    return `Cuenta #${invoice.account_id}`;
-  }
-  return '—';
-}
 
 function showInvoiceDetails(invoice) {
   const baseAmount = Number(invoice.amount ?? 0);
@@ -108,10 +94,11 @@ function showInvoiceDetails(invoice) {
   const total = baseAmount + ivaAmount + iibbAmount + percepcionesAmount;
   const numberLabel = invoice.number ? `Factura ${invoice.number}` : `Factura #${invoice.id}`;
 
-  showDocumentModal(numberLabel, [
+
+  const items = [
     { label: 'Fecha', value: formatDate(invoice.date) },
     { label: 'Tipo', value: getInvoiceTypeText(invoice.type) },
-    { label: 'Cuenta', value: resolveAccountName(invoice), wrap: true },
+
     {
       label: 'Concepto',
       value: invoice.description && invoice.description.trim() ? invoice.description : '—',
@@ -119,11 +106,30 @@ function showInvoiceDetails(invoice) {
       wrap: true
     },
     { label: 'Monto sin impuesto', value: `$ ${formatCurrency(baseAmount)}` },
-    { label: 'IVA', value: `$ ${formatCurrency(ivaAmount)}` },
-    { label: 'Ingresos Brutos', value: `$ ${formatCurrency(iibbAmount)}` },
-    { label: 'Percepciones', value: `$ ${formatCurrency(percepcionesAmount)}` },
-    { label: 'Total', value: `$ ${formatCurrency(total)}`, emphasis: true }
-  ]);
+
+    { label: 'IVA', value: `$ ${formatCurrency(ivaAmount)}` }
+  ];
+
+  if (invoice.type === 'sale') {
+    items.push({ label: 'Para SIRCREB', value: `$ ${formatCurrency(iibbAmount)}` });
+  } else if (invoice.type !== 'purchase') {
+    items.push({ label: 'Ingresos Brutos', value: `$ ${formatCurrency(iibbAmount)}` });
+  }
+
+  if (invoice.type !== 'sale') {
+    items.push({ label: 'Percepciones', value: `$ ${formatCurrency(percepcionesAmount)}` });
+  }
+
+  items.push({ label: 'Total', value: `$ ${formatCurrency(total)}`, emphasis: true });
+
+  const wrapperClasses =
+    invoice.type === 'purchase'
+      ? ['bg-info-subtle']
+      : invoice.type === 'sale'
+        ? ['bg-success-subtle']
+        : [];
+
+  showDocumentModal(numberLabel, items, { wrapperClasses });
 }
 
 function showRetentionDetails(certificate) {
