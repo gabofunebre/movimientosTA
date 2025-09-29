@@ -1,10 +1,20 @@
-import { fetchInkwellBillingData } from './api.js?v=1';
+import {
+  fetchInkwellBillingData,
+  fetchAccounts,
+  fetchAccountSummary
+} from './api.js?v=1';
 import { showOverlay, hideOverlay, formatCurrency } from './ui.js?v=1';
+import { CURRENCY_SYMBOLS } from './constants.js?v=1';
+import { calculateInkwellTotals } from './inkwell_calculator.js?v=1';
 
 const invoicesTbody = document.querySelector('#inkwell-invoices tbody');
 const retentionsTbody = document.querySelector('#inkwell-retentions tbody');
 const refreshBtn = document.getElementById('refresh-inkwell');
 const alertBox = document.getElementById('inkwell-alert');
+const summaryWrapper = document.getElementById('inkwell-summary');
+const sumList = document.getElementById('inkwell-summary-add');
+const subtractList = document.getElementById('inkwell-summary-subtract');
+const availableEl = document.getElementById('inkwell-available-total');
 const docModalEl = document.getElementById('inkwell-doc-modal');
 const docModalTitle = docModalEl?.querySelector('.modal-title') ?? null;
 const docModalBody = docModalEl?.querySelector('.modal-body') ?? null;
@@ -209,19 +219,81 @@ function renderRetentions(retentions) {
   });
 }
 
+function renderTotals(totals, currencySymbol) {
+  if (!summaryWrapper || !sumList || !subtractList || !availableEl) return;
+
+  const formatter = value => `${currencySymbol} ${formatCurrency(value)}`;
+
+  const addItems = [
+    { label: 'Ingresos', value: totals.income },
+    { label: 'IVA Compras', value: totals.purchaseIva },
+    { label: 'IVA Retenciones', value: totals.ivaRetentions },
+    { label: 'IIBB Retenciones', value: totals.iibbRetentions },
+    { label: 'Percepciones y otros', value: totals.perceptions }
+  ];
+
+  const subtractItems = [
+    { label: 'Egresos', value: totals.expense },
+    { label: 'IVA Ventas', value: totals.salesIva },
+    { label: 'SIRCREB', value: totals.sircreb }
+  ];
+
+  sumList.innerHTML = '';
+  subtractList.innerHTML = '';
+
+  addItems.forEach(item => {
+    const li = document.createElement('li');
+    li.classList.add('d-flex', 'justify-content-between', 'align-items-center', 'mb-1');
+    li.innerHTML =
+      `<span class="fw-semibold">${item.label}</span>` +
+      `<span class="text-success">${formatter(item.value)}</span>`;
+    sumList.appendChild(li);
+  });
+
+  subtractItems.forEach(item => {
+    const li = document.createElement('li');
+    li.classList.add('d-flex', 'justify-content-between', 'align-items-center', 'mb-1');
+    li.innerHTML =
+      `<span class="fw-semibold">${item.label}</span>` +
+      `<span class="text-danger">${formatter(item.value)}</span>`;
+    subtractList.appendChild(li);
+  });
+
+  availableEl.textContent = formatter(totals.available);
+  summaryWrapper.classList.remove('d-none');
+}
+
 async function loadData() {
   alertBox.classList.add('d-none');
   alertBox.textContent = '';
+  if (summaryWrapper) {
+    summaryWrapper.classList.add('d-none');
+  }
   showOverlay();
   try {
-    const data = await fetchInkwellBillingData();
-    renderInvoices(data.invoices || []);
-    renderRetentions(data.retention_certificates || []);
+    const [billingData, accounts] = await Promise.all([
+      fetchInkwellBillingData(),
+      fetchAccounts()
+    ]);
+
+    const billingAccount = accounts.find(acc => acc.is_billing);
+    if (!billingAccount) {
+      throw new Error('No se encontró la cuenta de facturación configurada');
+    }
+
+    const summary = await fetchAccountSummary(billingAccount.id);
+    const totals = calculateInkwellTotals(billingData, summary);
+    const currencySymbol = CURRENCY_SYMBOLS[billingAccount.currency] || '$';
+
+    renderTotals(totals, currencySymbol);
+    renderInvoices(billingData.invoices || []);
+    renderRetentions(billingData.retention_certificates || []);
   } catch (error) {
     invoicesTbody.innerHTML = '';
     retentionsTbody.innerHTML = '';
     renderEmptyRow(invoicesTbody, 'Sin datos disponibles');
     renderEmptyRow(retentionsTbody, 'Sin datos disponibles');
+    if (summaryWrapper) summaryWrapper.classList.add('d-none');
     alertBox.textContent = error instanceof Error ? error.message : 'Ocurrió un error inesperado';
     alertBox.classList.remove('d-none');
   } finally {
