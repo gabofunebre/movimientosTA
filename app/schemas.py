@@ -131,9 +131,51 @@ class AccountSummary(BaseModel):
     income_balance: Decimal
     expense_balance: Decimal
     is_billing: bool
+    inkwell_income: Decimal
+    inkwell_expense: Decimal
+    inkwell_available: Decimal
     iva_purchases: Decimal | None = None
     iva_sales: Decimal | None = None
     iibb: Decimal | None = None
+
+
+class InkwellInvoice(BaseModel):
+    id: int
+    date: date
+    amount: Decimal
+    type: str
+    description: str | None = None
+    number: str | None = None
+    account_id: int | None = None
+    iva_amount: Decimal | None = None
+    iibb_amount: Decimal | None = None
+    percepciones: Decimal | None = None
+
+    class Config:
+        extra = "allow"
+
+
+class RetainedTaxType(BaseModel):
+    id: int
+    name: str
+
+
+class InkwellRetentionCertificate(BaseModel):
+    id: int
+    number: str
+    date: date
+    amount: Decimal
+    invoice_reference: str | None = None
+    retained_tax_type_id: int | None = None
+    retained_tax_type: RetainedTaxType | None = None
+
+    class Config:
+        extra = "allow"
+
+
+class InkwellBillingData(BaseModel):
+    invoices: List[InkwellInvoice]
+    retention_certificates: List[InkwellRetentionCertificate]
 
 
 class UserCreate(BaseModel):

@@ -50,19 +50,40 @@ async function toggleDetails(row, acc) {
   const total = balance;
 
   let html = '<div class="container text-start">';
-  html += '<div class="row">';
-  html += '<div class="col">';
+  html += '<div class="row g-4 align-items-start">';
+  html += '<div class="col-12 col-lg-6">';
   html += `<p><strong>Saldo inicial:</strong> <span class="text-info">${symbol} ${formatCurrency(summary.opening_balance)}</span></p>`;
   html += `<p><strong>Ingresos:</strong> <span class="text-success">${symbol} ${formatCurrency(summary.income_balance)}</span></p>`;
   html += `<p><strong>Egresos:</strong> <span class="text-danger">${symbol} ${formatCurrency(summary.expense_balance)}</span></p>`;
   html += `<p><strong>Balance:</strong> <span class="text-dark fst-italic">${symbol} ${formatCurrency(balance)}</span></p>`;
   html += '</div>';
+  if (summary.is_billing) {
+    const inkwellIncome = Number(summary.inkwell_income || 0);
+    const inkwellExpense = Number(summary.inkwell_expense || 0);
+    const inkwellAvailable = Number(summary.inkwell_available || 0);
+    html += '<div class="col-12 col-lg-6">';
+    html += '<div class="d-flex justify-content-between align-items-start mb-2">';
+    html += '<h5 class="mb-0">Inkwell</h5>';
+    html += '<button id="inkwell-details-btn" class="btn btn-outline-primary btn-sm">Detalles Inkwell</button>';
+    html += '</div>';
+    html += `<p class="mb-1"><strong>Ingresos Inkwell:</strong> <span class="text-success">${symbol} ${formatCurrency(inkwellIncome)}</span></p>`;
+    html += `<p class="mb-1"><strong>Egresos Inkwell:</strong> <span class="text-danger">${symbol} ${formatCurrency(inkwellExpense)}</span></p>`;
+    html += `<p class="mb-0"><strong>Disponible Inkwell:</strong> <span class="text-dark fw-semibold">${symbol} ${formatCurrency(inkwellAvailable)}</span></p>`;
+    html += '</div>';
+  }
   html += '</div>';
-  html += `<div class="row"><div class="col text-center"><p class="mb-0"><strong>Total Disponible:</strong> <span class="text-dark fw-bold fs-5">${symbol} ${formatCurrency(total)}</span></p></div></div>`;
+  html += `<div class="row mt-3"><div class="col text-center"><p class="mb-0"><strong>Total Disponible:</strong> <span class="text-dark fw-bold fs-5">${symbol} ${formatCurrency(total)}</span></p></div></div>`;
   html += '</div>';
   detailTd.innerHTML = html;
   detailTr.appendChild(detailTd);
   row.after(detailTr);
+  const detailsBtn = detailTd.querySelector('#inkwell-details-btn');
+  if (detailsBtn) {
+    detailsBtn.addEventListener('click', event => {
+      event.preventDefault();
+      window.location.href = '/inkwell.html';
+    });
+  }
 }
 
 async function loadAccounts() {

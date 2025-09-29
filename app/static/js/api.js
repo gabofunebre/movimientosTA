@@ -265,3 +265,16 @@ export async function deleteExportable(id) {
   } catch (_) {}
   return { ok: false, error };
 }
+
+export async function fetchInkwellBillingData() {
+  const res = await fetch('/inkwell/billing-data');
+  if (!res.ok) {
+    let error = 'No se pudieron obtener los datos de Inkwell';
+    try {
+      const data = await res.json();
+      error = data.detail || error;
+    } catch (_) {}
+    throw new Error(error);
+  }
+  return res.json();
+}
