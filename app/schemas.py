@@ -46,22 +46,26 @@ class TransactionWithBalance(TransactionOut):
 
 
 class BillingSyncAck(BaseModel):
-    checkpoint_id: conint(ge=0)
+    movements_checkpoint_id: conint(ge=0)
+    changes_checkpoint_id: conint(ge=0)
 
 
 class BillingSyncState(BaseModel):
     last_transaction_id: int
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
+    last_change_id: int
+    transactions_updated_at: datetime
+    changes_updated_at: datetime
 
 
 class BillingMovementsResponse(BaseModel):
-    last_confirmed_id: int
-    checkpoint_id: int
-    has_more: bool
+    last_confirmed_transaction_id: int
+    transactions_checkpoint_id: int
+    has_more_transactions: bool
     transactions: List[TransactionOut]
+    last_confirmed_change_id: int
+    changes_checkpoint_id: int
+    has_more_changes: bool
+    changes: List["ExportableMovementChangeEvent"]
 
 
 class InvoiceCreate(BaseModel):
@@ -261,3 +265,6 @@ class NotificationListResponse(BaseModel):
 class NotificationAck(BaseModel):
     action: Literal["ack"]
     id: str
+
+
+BillingMovementsResponse.update_forward_refs()
