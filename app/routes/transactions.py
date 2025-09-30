@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from datetime import date, datetime, timezone
+from types import SimpleNamespace
 from typing import List, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -56,8 +57,8 @@ def _notify_billing_movement(
             "Movimiento exportable actualizado",
         ),
         "deleted": (
-            "Movimiento exportable eliminado",
-            "eliminó",
+            "Eliminación de movimiento exportable",
+            "eliminó definitivamente",
             "Movimiento exportable eliminado",
         ),
     }
@@ -262,7 +263,57 @@ def update_tx(tx_id: int, payload: TransactionCreate, db: Session = Depends(get_
 @router.delete("/{tx_id}", status_code=204, dependencies=[Depends(require_admin)])
 def delete_tx(tx_id: int, db: Session = Depends(get_db)):
     tx = db.get(Transaction, tx_id)
+    movement_payload: Optional[SimpleNamespace] = None
+    account_payload: Optional[SimpleNamespace] = None
+    transaction_payload: Optional[SimpleNamespace] = None
+    if tx and tx.exportable_movement_id is not None:
+        movement = db.get(ExportableMovement, tx.exportable_movement_id)
+        if movement:
+            movement_payload = SimpleNamespace(
+                id=movement.id,
+                description=movement.description,
+            )
+            billing_account = db.scalar(select(Account).where(Account.is_billing.is_(True)))
+            if billing_account and billing_account.id == tx.account_id:
+                currency = getattr(billing_account, "currency", None)
+                currency_payload = None
+                if currency is not None:
+                    currency_payload = SimpleNamespace(
+                        value=getattr(currency, "value", None)
+                    )
+                account_payload = SimpleNamespace(
+                    id=billing_account.id,
+                    name=billing_account.name,
+                    currency=currency_payload,
+                )
+        if movement_payload and account_payload:
+            transaction_payload = SimpleNamespace(
+                id=tx.id,
+                account_id=tx.account_id,
+                description=tx.description,
+                amount=tx.amount,
+                notes=tx.notes,
+                date=tx.date,
+                created_at=getattr(tx, "created_at", None),
+            )
     if tx:
         db.delete(tx)
         db.commit()
+        if (
+            transaction_payload is not None
+            and movement_payload is not None
+            and account_payload is not None
+        ):
+            try:
+                _notify_billing_movement(
+                    event="deleted",
+                    transaction=transaction_payload,
+                    account=account_payload,
+                    movement=movement_payload,
+                )
+            except Exception:
+                LOGGER.exception(
+                    "Error enviando la notificación de movimiento Inkwell eliminado para la transacción %s",
+                    transaction_payload.id,
+                )
     return Response(status_code=204)
