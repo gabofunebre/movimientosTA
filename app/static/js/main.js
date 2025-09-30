@@ -28,6 +28,9 @@ const filterForm = document.getElementById('tx-filter-form');
 const filterAccountSelect = document.getElementById('tx-filter-account');
 const clearFiltersBtn = document.getElementById('tx-clear-filters');
 const filterModal = filterModalEl ? new bootstrap.Modal(filterModalEl) : null;
+const filterSummary = document.getElementById('tx-filter-summary');
+const filterSummaryContent = document.getElementById('tx-filter-summary-content');
+const clearFiltersSummaryBtn = document.getElementById('tx-clear-filters-summary');
 const filterStartInput = filterForm
   ? filterForm.querySelector('[name="start_date"]')
   : null;
@@ -59,6 +62,19 @@ const filters = {
   account_id: '',
 };
 let hasMore = true;
+
+function formatDateForDisplay(value) {
+  if (!value) return '';
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleDateString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
 
 function renderTransactions() {
   const q = searchBox.value.trim().toLowerCase();
@@ -121,6 +137,60 @@ function updateFilterButtonState() {
   filterBtn.classList.toggle('btn-filter-active', active);
 }
 
+function updateFilterSummary() {
+  if (!filterSummary || !filterSummaryContent) return;
+  const activeFilters = [];
+  if (filters.start_date) {
+    activeFilters.push({
+      label: 'Desde',
+      value: formatDateForDisplay(filters.start_date),
+    });
+  }
+  if (filters.end_date) {
+    activeFilters.push({
+      label: 'Hasta',
+      value: formatDateForDisplay(filters.end_date),
+    });
+  }
+  if (filters.account_id) {
+    const accountId = Number(filters.account_id);
+    const accountName = accountMap[accountId]?.name;
+    activeFilters.push({
+      label: 'Cuenta',
+      value: accountName || `#${filters.account_id}`,
+    });
+  }
+
+  const hasActiveFilters = activeFilters.length > 0;
+  filterSummary.classList.toggle('d-none', !hasActiveFilters);
+  filterSummaryContent.innerHTML = '';
+  if (!hasActiveFilters) {
+    return;
+  }
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'filter-summary-label text-uppercase text-secondary fw-semibold';
+  labelEl.textContent = 'Filtrado:';
+  filterSummaryContent.appendChild(labelEl);
+
+  activeFilters.forEach(filter => {
+    const chip = document.createElement('span');
+    chip.className = 'filter-summary-chip d-inline-flex align-items-center gap-1';
+    const label = document.createElement('span');
+    label.className = 'text-secondary fw-semibold';
+    label.textContent = `${filter.label}:`;
+    const value = document.createElement('span');
+    value.textContent = filter.value;
+    chip.append(label, value);
+    filterSummaryContent.appendChild(chip);
+  });
+}
+
+function updateFilterIndicators() {
+  updateFilterButtonState();
+  updateFilterSummary();
+}
+
 function populateFilterAccounts() {
   if (!filterAccountSelect) return;
   const currentValue = filters.account_id;
@@ -157,6 +227,20 @@ function populateAccountSelect(restrictToBilling = false, selectedId = null) {
   } else if (restrictToBilling && billingAccountId && list.length) {
     form.account_id.value = String(billingAccountId);
   }
+}
+
+async function clearAllFilters({ closeModal = false, resetForm = false } = {}) {
+  if (resetForm && filterForm) {
+    filterForm.reset();
+  }
+  filters.start_date = '';
+  filters.end_date = '';
+  filters.account_id = '';
+  if (closeModal && filterModal) {
+    filterModal.hide();
+  }
+  updateFilterIndicators();
+  await reloadTransactions();
 }
 
 function resetConceptInputs() {
@@ -310,23 +394,21 @@ if (filterBtn && filterModal && filterForm) {
     filters.end_date = end;
     filters.account_id = filterAccountSelect ? filterAccountSelect.value : '';
     filterModal.hide();
-    updateFilterButtonState();
+    updateFilterIndicators();
     await reloadTransactions();
   });
 
   if (clearFiltersBtn) {
     clearFiltersBtn.addEventListener('click', async () => {
-      if (filterForm) {
-        filterForm.reset();
-      }
-      filters.start_date = '';
-      filters.end_date = '';
-      filters.account_id = '';
-      filterModal.hide();
-      updateFilterButtonState();
-      await reloadTransactions();
+      await clearAllFilters({ closeModal: true, resetForm: true });
     });
   }
+}
+
+if (clearFiltersSummaryBtn) {
+  clearFiltersSummaryBtn.addEventListener('click', async () => {
+    await clearAllFilters({ resetForm: true });
+  });
 }
 freqCheck.addEventListener('change', handleFreqChange);
 inkwellCheck.addEventListener('change', handleInkwellChange);
@@ -479,7 +561,7 @@ form.addEventListener('submit', async e => {
   exportables = await fetchExportables();
   exportableMap = Object.fromEntries(exportables.map(m => [m.id, m]));
   populateFilterAccounts();
-  updateFilterButtonState();
+  updateFilterIndicators();
   await reloadTransactions();
   updateSortIcons();
 })();

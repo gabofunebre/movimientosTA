@@ -156,6 +156,34 @@ body {
   flex-wrap: wrap;
 }
 
+#tx-filter-summary {
+  margin-bottom: 1.5rem;
+}
+
+.filter-summary {
+  background: linear-gradient(135deg, #f8fbff 0%, #ffffff 60%);
+  border-left: 0.35rem solid #0d47a1;
+  border-radius: 0.75rem;
+}
+
+.filter-summary-label {
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+}
+
+.filter-summary-chip {
+  background-color: #e8f0fe;
+  color: #0d47a1;
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+#tx-clear-filters-summary {
+  white-space: nowrap;
+}
+
 #table-controls .control-button {
   flex: 0 0 auto;
 }
