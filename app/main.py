@@ -47,6 +47,7 @@ async def require_login_middleware(request: Request, call_next):
         "/health",
         "/facturacion-info",
         "/movimientos_cuenta_facturada",
+        "/movimientos_cuenta_facturada/movimientos_exportables/cambios",
     }
     if not request.session.get("user_id") and not path.startswith("/static") and path not in allowed:
         return RedirectResponse("/login")
