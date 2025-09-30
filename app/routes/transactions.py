@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 from datetime import date, datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
@@ -20,8 +20,15 @@ router = APIRouter(prefix="/transactions")
 LOGGER = logging.getLogger(__name__)
 
 
+EventType = Literal["created", "updated", "deleted"]
+
+
 def _notify_billing_movement(
-    *, transaction: Transaction, account: Account, movement: ExportableMovement
+    *,
+    event: EventType,
+    transaction: Transaction,
+    account: Account,
+    movement: ExportableMovement,
 ) -> None:
     endpoint = os.getenv("NOTIFICACIONES_INKWELL")
     if not endpoint:
@@ -37,11 +44,29 @@ def _notify_billing_movement(
         occurred_at = datetime.now(timezone.utc)
 
     account_name = getattr(account, "name", "")
+    event_texts: dict[EventType, tuple[str, str, str]] = {
+        "created": (
+            "Nuevo movimiento exportable",
+            "registró",
+            "Movimiento exportable registrado",
+        ),
+        "updated": (
+            "Movimiento exportable actualizado",
+            "actualizó",
+            "Movimiento exportable actualizado",
+        ),
+        "deleted": (
+            "Movimiento exportable eliminado",
+            "eliminó",
+            "Movimiento exportable eliminado",
+        ),
+    }
+    title_prefix, body_action, description_text = event_texts[event]
+
     body = (
-        "Se registró un movimiento exportable en la cuenta de facturación "
-        f"{account_name}."
+        f"Se {body_action} un movimiento exportable en la cuenta de facturación {account_name}."
         if account_name
-        else "Se registró un movimiento exportable en la cuenta de facturación."
+        else f"Se {body_action} un movimiento exportable en la cuenta de facturación."
     )
 
     currency = getattr(account, "currency", None)
@@ -55,6 +80,8 @@ def _notify_billing_movement(
         "movement_id": movement.id,
         "movement_description": movement.description,
         "description": transaction.description,
+        "event": event,
+        "event_description": description_text,
         "amount": format(transaction.amount, "f"),
         "date": transaction.date.isoformat(),
     }
@@ -63,7 +90,7 @@ def _notify_billing_movement(
 
     payload = {
         "type": "movimiento_cta_facturacion_iw",
-        "title": f"Movimiento exportable: {movement.description}",
+        "title": f"{title_prefix}: {movement.description}",
         "body": body,
         "deeplink": None,
         "topic": "inkwell",
@@ -123,7 +150,10 @@ def create_tx(payload: TransactionCreate, db: Session = Depends(get_db)):
     if movement is not None and billing_account is not None:
         try:
             _notify_billing_movement(
-                transaction=tx, account=billing_account, movement=movement
+                event="created",
+                transaction=tx,
+                account=billing_account,
+                movement=movement,
             )
         except Exception:
             LOGGER.exception(
