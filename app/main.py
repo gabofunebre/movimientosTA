@@ -44,16 +44,20 @@ async def require_login_middleware(request: Request, call_next):
     ):
         return await call_next(request)
 
-    allowed = {
+    allowed_exact = {
         "/login",
         "/register",
         "/health",
         "/facturacion-info",
-        "/movimientos_cuenta_facturada",
-        "/movimientos_cuenta_facturada/movimientos_exportables/cambios",
-        "/movimientos_cuenta_facturada/movimientos_exportables/cambios/ack",
     }
-    if not request.session.get("user_id") and not path.startswith("/static") and path not in allowed:
+    allowed_prefixes = (
+        "/movimientos_cuenta_facturada",
+        "/static",
+    )
+    if not request.session.get("user_id") and not (
+        path in allowed_exact
+        or any(path.startswith(prefix) for prefix in allowed_prefixes)
+    ):
         return RedirectResponse("/login")
     return await call_next(request)
 
