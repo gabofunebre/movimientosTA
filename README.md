@@ -2,6 +2,15 @@
 
 Aplicación web basada en FastAPI para registrar movimientos de dinero y facturación.
 
+## Tabla de contenidos
+
+- [Características](#características)
+- [Guía rápida de uso](#guía-rápida-de-uso)
+- [Notificaciones interoperables](#notificaciones-interoperables)
+- [Movimientos exportables](#movimientos-exportables)
+- [Cálculos de moneda](#cálculos-de-moneda)
+- [Desarrollo con Docker](#desarrollo-con-docker)
+
 ## Características
 
 - **Cuentas:** Cada cuenta tiene nombre, moneda, saldo inicial, color y puede marcarse como cuenta de facturación.
@@ -37,6 +46,113 @@ Variables de entorno relevantes:
 - `PEER_BASE_URL`: URL HTTPS base de la app hermana para envíos salientes.
 
 Existe además una tarea en segundo plano que elimina diariamente las notificaciones leídas con más de 90 días de antigüedad.
+
+## Movimientos exportables
+
+Los endpoints bajo `/movimientos_exportables` permiten sincronizar un catálogo de movimientos con sistemas externos mediante eventos ordenados e idempotentes.
+
+### GET `/movimientos_exportables/cambios`
+
+Devuelve los eventos pendientes de confirmación desde un checkpoint determinado.
+
+- **Parámetros de consulta**
+  - `since` (opcional, `int ≥ 0`): identifica el último evento confirmado por el consumidor. Si se omite se utilizará `last_confirmed_id`, es decir, el último evento confirmado previamente vía `ack`.
+  - `limit` (opcional, `1-500`, default `100`): cantidad máxima de eventos a retornar. El servicio internamente consulta `limit + 1` filas para determinar si quedan más eventos disponibles.
+- **Respuesta**
+  - `last_confirmed_id`: último evento confirmado en el servidor, utilizado como valor por defecto cuando no se envía `since`.
+  - `checkpoint_id`: identificador que representa el último evento incluido en la respuesta. Si no hubiera eventos nuevos, repite el `effective_since` aplicado, permitiendo confirmar que no hay novedades.
+  - `has_more`: indica si existen eventos adicionales (true cuando se truncó la respuesta por `limit`).
+  - `changes`: lista ordenada ascendentemente de eventos con estructura `ExportableMovementChangeEvent`.
+    - Cada evento incluye `id`, `movement_id`, `event` (`created`, `updated`, `deleted`), `occurred_at` y un `payload` con la información relevante del cambio.
+
+El campo `payload` describe el estado actual del movimiento exportable asociado al evento, y según el tipo de evento incluye:
+
+- Alta (`created`): `id` y `description` del nuevo movimiento.
+- Edición (`updated`): `id`, `description` actualizada y `previous_description` para que el consumidor pueda detectar cambios.
+- Baja (`deleted`): `id`, `description` y el indicador `deleted: true` para permitir la purga remota.
+
+**Ejemplo de request**
+
+```http
+GET /movimientos_exportables/cambios?since=12&limit=2
+```
+
+**Ejemplo de response**
+
+```json
+{
+  "last_confirmed_id": 10,
+  "checkpoint_id": 14,
+  "has_more": true,
+  "changes": [
+    {
+      "id": 13,
+      "movement_id": 8,
+      "event": "created",
+      "occurred_at": "2024-01-05T10:15:23.123456",
+      "payload": {
+        "id": 8,
+        "description": "Transferencia bancaria"
+      }
+    },
+    {
+      "id": 14,
+      "movement_id": 2,
+      "event": "updated",
+      "occurred_at": "2024-01-05T11:01:02.987654",
+      "payload": {
+        "id": 2,
+        "description": "Pago a proveedor",
+        "previous_description": "Pago proveedor"
+      }
+    }
+  ]
+}
+```
+
+**Ejemplo de baja**
+
+```json
+{
+  "id": 15,
+  "movement_id": 5,
+  "event": "deleted",
+  "occurred_at": "2024-01-05T12:44:00.000000",
+  "payload": {
+    "id": 5,
+    "description": "Servicio mensual",
+    "deleted": true
+  }
+}
+```
+
+### POST `/movimientos_exportables/cambios/ack`
+
+Confirma la recepción de los eventos hasta el `checkpoint_id` indicado y desencadena la purga de los eventos ya procesados.
+
+- **Request**
+
+  ```json
+  {
+    "checkpoint_id": 14
+  }
+  ```
+
+- **Validaciones**
+  - El `checkpoint_id` debe ser un entero mayor o igual a cero (`conint(ge=0)`).
+  - No puede ser menor que `last_change_id`; en caso contrario se devuelve `400` con el mensaje *"El checkpoint es menor al último confirmado"*.
+  - No puede superar el máximo `id` existente en `ExportableMovementChange`; si se envía uno inexistente se devuelve `400` con el mensaje *"El checkpoint indicado no existe"*.
+
+Cuando el checkpoint es válido y distinto del último confirmado, se actualiza `last_change_id` y se eliminan de forma permanente todos los eventos `ExportableMovementChange` con `id` menor o igual al checkpoint, evitando reenvíos innecesarios. Si el checkpoint coincide con el último confirmado, simplemente se devuelve el estado actual sin modificar ni borrar eventos.
+
+**Response**
+
+```json
+{
+  "last_change_id": 14,
+  "updated_at": "2024-01-05T11:01:05.000000"
+}
+```
 
 ## Cálculos de moneda
 
