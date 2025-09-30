@@ -200,8 +200,11 @@ def update_tx(tx_id: int, payload: TransactionCreate, db: Session = Depends(get_
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No se permiten fechas futuras",
         )
+    original_exportable_id = tx.exportable_movement_id
     exportable_id = payload.exportable_movement_id
     description = payload.description
+    movement: ExportableMovement | None = None
+    billing_account: Account | None = None
     if exportable_id is not None:
         movement = db.get(ExportableMovement, exportable_id)
         if not movement:
@@ -216,6 +219,21 @@ def update_tx(tx_id: int, payload: TransactionCreate, db: Session = Depends(get_
                 detail="Los movimientos Inkwell solo pueden registrarse en la cuenta de facturación",
             )
         description = movement.description
+    elif original_exportable_id is not None:
+        movement = db.get(ExportableMovement, original_exportable_id)
+        if not movement:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Movimiento Inkwell no encontrado",
+            )
+    notify_movement_id = exportable_id if exportable_id is not None else original_exportable_id
+    if notify_movement_id is not None and billing_account is None:
+        billing_account = db.scalar(select(Account).where(Account.is_billing.is_(True)))
+        if not billing_account:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Los movimientos Inkwell solo pueden registrarse en la cuenta de facturación",
+            )
     tx.account_id = payload.account_id
     tx.date = payload.date
     tx.description = description
@@ -225,6 +243,19 @@ def update_tx(tx_id: int, payload: TransactionCreate, db: Session = Depends(get_
     db.add(tx)
     db.commit()
     db.refresh(tx)
+    if notify_movement_id is not None and movement is not None and billing_account is not None:
+        try:
+            _notify_billing_movement(
+                event="updated",
+                transaction=tx,
+                account=billing_account,
+                movement=movement,
+            )
+        except Exception:
+            LOGGER.exception(
+                "Error enviando la notificación de movimiento Inkwell actualizado para la transacción %s",
+                tx.id,
+            )
     return tx
 
 
