@@ -114,6 +114,12 @@ class FrequentTransaction(Base):
     )
 
 
+class ExportableMovementEvent(str, Enum):
+    CREATED = "created"
+    UPDATED = "updated"
+    DELETED = "deleted"
+
+
 class ExportableMovement(Base):
     __tablename__ = "movimientos_exportables"
 
@@ -124,6 +130,33 @@ class ExportableMovement(Base):
     )
 
     transactions = relationship("Transaction", back_populates="exportable_movement")
+
+
+class ExportableMovementChange(Base):
+    __tablename__ = "movimientos_exportables_cambios"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    movement_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    event: Mapped[ExportableMovementEvent] = mapped_column(
+        SqlEnum(ExportableMovementEvent), nullable=False
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+
+class ExportableMovementChangeSyncStatus(Base):
+    __tablename__ = "movimientos_exportables_cambios_sync_status"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    last_change_id: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        server_onupdate=func.now(),
+    )
 
 
 class User(Base):

@@ -114,6 +114,36 @@ class ExportableMovementOut(ExportableMovementIn):
         from_attributes = True
 
 
+class ExportableMovementChangeEvent(BaseModel):
+    id: int
+    movement_id: int | None = None
+    event: Literal["created", "updated", "deleted"]
+    occurred_at: datetime
+    payload: dict[str, Any]
+
+    class Config:
+        from_attributes = True
+
+
+class ExportableMovementChangesResponse(BaseModel):
+    last_confirmed_id: int
+    checkpoint_id: int
+    has_more: bool
+    changes: List[ExportableMovementChangeEvent]
+
+
+class ExportableMovementChangeAck(BaseModel):
+    checkpoint_id: conint(ge=0)
+
+
+class ExportableMovementChangeState(BaseModel):
+    last_change_id: int
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class AccountBalance(BaseModel):
     account_id: int
     name: str
