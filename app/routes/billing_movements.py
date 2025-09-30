@@ -1,12 +1,18 @@
 """Endpoints para exportar movimientos de la cuenta de facturación."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from auth import require_api_key
 from config.db import get_db
-from models import Account, BillingSyncStatus, Transaction
+from models import (
+    Account,
+    BillingSyncStatus,
+    ExportableMovementChange,
+    Transaction,
+)
+from routes.exportables import get_changes_sync_status
 from schemas import BillingMovementsResponse, BillingSyncAck, BillingSyncState
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
@@ -40,11 +46,15 @@ def get_sync_status(db: Session) -> BillingSyncStatus:
 )
 def list_billing_movements(
     limit: int = Query(default=100, ge=1, le=500),
+    changes_limit: int = Query(default=100, ge=1, le=500),
+    changes_since: int | None = Query(default=None, ge=0),
     db: Session = Depends(get_db),
 ) -> BillingMovementsResponse:
     account = get_billing_account(db)
     sync_status = get_sync_status(db)
+    change_sync_status = get_changes_sync_status(db)
     last_confirmed_id = sync_status.last_transaction_id
+    last_confirmed_change_id = change_sync_status.last_change_id
 
     stmt = (
         select(Transaction)
@@ -62,11 +72,33 @@ def list_billing_movements(
         rows = rows[:limit]
     checkpoint_id = rows[-1].id if rows else last_confirmed_id
 
+    effective_changes_since = (
+        changes_since if changes_since is not None else last_confirmed_change_id
+    )
+
+    changes_stmt = (
+        select(ExportableMovementChange)
+        .where(ExportableMovementChange.id > effective_changes_since)
+        .order_by(ExportableMovementChange.id.asc())
+        .limit(changes_limit + 1)
+    )
+    change_rows = db.scalars(changes_stmt).all()
+    changes_has_more = len(change_rows) > changes_limit
+    if changes_has_more:
+        change_rows = change_rows[:changes_limit]
+    changes_checkpoint_id = (
+        change_rows[-1].id if change_rows else effective_changes_since
+    )
+
     return BillingMovementsResponse(
-        last_confirmed_id=last_confirmed_id,
-        checkpoint_id=checkpoint_id,
-        has_more=has_more,
+        last_confirmed_transaction_id=last_confirmed_id,
+        transactions_checkpoint_id=checkpoint_id,
+        has_more_transactions=has_more,
         transactions=rows,
+        last_confirmed_change_id=last_confirmed_change_id,
+        changes_checkpoint_id=changes_checkpoint_id,
+        has_more_changes=changes_has_more,
+        changes=change_rows,
     )
 
 
@@ -79,7 +111,9 @@ def acknowledge_billing_movements(
 ) -> BillingSyncState:
     account = get_billing_account(db)
     sync_status = get_sync_status(db)
-    checkpoint_id = payload.checkpoint_id
+    change_sync_status = get_changes_sync_status(db)
+    checkpoint_id = payload.movements_checkpoint_id
+    changes_checkpoint_id = payload.changes_checkpoint_id
 
     if checkpoint_id < sync_status.last_transaction_id:
         raise HTTPException(
@@ -97,11 +131,52 @@ def acknowledge_billing_movements(
             detail="El checkpoint indicado no existe para la cuenta de facturación",
         )
 
-    if checkpoint_id == sync_status.last_transaction_id:
-        return sync_status
+    if changes_checkpoint_id < change_sync_status.last_change_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El checkpoint de cambios es menor al último confirmado",
+        )
 
-    sync_status.last_transaction_id = checkpoint_id
-    db.add(sync_status)
-    db.commit()
-    db.refresh(sync_status)
-    return sync_status
+    max_change_id = db.scalar(select(func.max(ExportableMovementChange.id))) or 0
+    if changes_checkpoint_id > max_change_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El checkpoint de cambios indicado no existe",
+        )
+
+    previous_transaction_id = sync_status.last_transaction_id
+    previous_change_id = change_sync_status.last_change_id
+
+    should_commit = False
+    changes_advanced = False
+
+    if checkpoint_id != previous_transaction_id:
+        sync_status.last_transaction_id = checkpoint_id
+        db.add(sync_status)
+        should_commit = True
+
+    if changes_checkpoint_id != previous_change_id:
+        change_sync_status.last_change_id = changes_checkpoint_id
+        db.add(change_sync_status)
+        should_commit = True
+        changes_advanced = changes_checkpoint_id > previous_change_id
+
+    if changes_advanced and changes_checkpoint_id > 0:
+        db.execute(
+            delete(ExportableMovementChange).where(
+                ExportableMovementChange.id <= changes_checkpoint_id
+            )
+        )
+        should_commit = True
+
+    if should_commit:
+        db.commit()
+        db.refresh(sync_status)
+        db.refresh(change_sync_status)
+
+    return BillingSyncState(
+        last_transaction_id=sync_status.last_transaction_id,
+        last_change_id=change_sync_status.last_change_id,
+        transactions_updated_at=sync_status.updated_at,
+        changes_updated_at=change_sync_status.updated_at,
+    )
