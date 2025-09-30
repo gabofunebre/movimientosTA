@@ -20,6 +20,7 @@ from schemas import (
 )
 
 router = APIRouter(prefix="/movimientos_exportables")
+billing_exportables_router = APIRouter(prefix="/movimientos_cuenta_facturada")
 
 
 def record_change(
@@ -197,3 +198,26 @@ def acknowledge_exportable_changes(
         db.commit()
 
     return sync_status
+
+
+@billing_exportables_router.get(
+    "/movimientos_exportables/cambios",
+    response_model=ExportableMovementChangesResponse,
+)
+def list_billing_exportable_changes(
+    since: int | None = Query(default=None, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    return list_exportable_changes(since=since, limit=limit, db=db)
+
+
+@billing_exportables_router.post(
+    "/movimientos_exportables/cambios/ack",
+    response_model=ExportableMovementChangeState,
+)
+def acknowledge_billing_exportable_changes(
+    payload: ExportableMovementChangeAck,
+    db: Session = Depends(get_db),
+):
+    return acknowledge_exportable_changes(payload=payload, db=db)

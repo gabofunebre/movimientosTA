@@ -16,7 +16,10 @@ from routes.accounts import router as accounts_router
 from routes.health import router as health_router
 from routes.transactions import router as transactions_router
 from routes.frequents import router as frequents_router
-from routes.exportables import router as exportables_router
+from routes.exportables import (
+    billing_exportables_router,
+    router as exportables_router,
+)
 from routes.invoices import router as invoices_router
 from routes.users import router as users_router
 from routes.billing_info import router as billing_info_router
@@ -48,6 +51,7 @@ async def require_login_middleware(request: Request, call_next):
         "/facturacion-info",
         "/movimientos_cuenta_facturada",
         "/movimientos_cuenta_facturada/movimientos_exportables/cambios",
+        "/movimientos_cuenta_facturada/movimientos_exportables/cambios/ack",
     }
     if not request.session.get("user_id") and not path.startswith("/static") and path not in allowed:
         return RedirectResponse("/login")
@@ -95,6 +99,7 @@ app.include_router(accounts_router)
 app.include_router(transactions_router)
 app.include_router(frequents_router)
 app.include_router(exportables_router)
+app.include_router(billing_exportables_router)
 app.include_router(invoices_router)
 app.include_router(users_router)
 app.include_router(billing_info_router)
