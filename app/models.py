@@ -68,6 +68,34 @@ class Transaction(Base):
     )
 
 
+class BillingTransactionEventType(str, Enum):
+    CREATED = "created"
+    UPDATED = "updated"
+    DELETED = "deleted"
+
+
+class BillingTransactionEvent(Base):
+    __tablename__ = "billing_transaction_events"
+    __table_args__ = (
+        Index(
+            "ix_billing_transaction_events_account_id_id",
+            "account_id",
+            "id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    transaction_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    account_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    event: Mapped[BillingTransactionEventType] = mapped_column(
+        SqlEnum(BillingTransactionEventType), nullable=False
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+
 class BillingSyncStatus(Base):
     __tablename__ = "billing_sync_status"
 

@@ -3,7 +3,7 @@ import logging
 import os
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
-from typing import List, Optional, Literal
+from typing import Any, List, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
@@ -11,7 +11,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from config.db import get_db
-from models import Account, ExportableMovement, Transaction
+from models import (
+    Account,
+    BillingTransactionEvent as BillingTransactionEventModel,
+    BillingTransactionEventType,
+    ExportableMovement,
+    Transaction,
+)
 from auth import require_admin
 from schemas import TransactionCreate, TransactionOut
 from services.notifications import send_notification
@@ -22,6 +28,34 @@ LOGGER = logging.getLogger(__name__)
 
 
 EventType = Literal["created", "updated", "deleted"]
+
+
+def _serialize_transaction_for_event(transaction: Transaction) -> dict[str, Any]:
+    return TransactionOut.model_validate(transaction).model_dump(mode="json")
+
+
+def _record_billing_transaction_event(
+    db: Session,
+    *,
+    account: Account | None,
+    transaction: Transaction,
+    event: BillingTransactionEventType,
+) -> None:
+    if not account or not account.is_billing:
+        return
+    payload: dict[str, Any]
+    if event is BillingTransactionEventType.DELETED:
+        payload = {"id": transaction.id}
+    else:
+        payload = _serialize_transaction_for_event(transaction)
+    db.add(
+        BillingTransactionEventModel(
+            transaction_id=transaction.id,
+            account_id=account.id,
+            event=event,
+            payload=payload,
+        )
+    )
 
 
 def _notify_billing_movement(
@@ -145,6 +179,17 @@ def create_tx(payload: TransactionCreate, db: Session = Depends(get_db)):
         exportable_movement_id=exportable_id,
     )
     db.add(tx)
+    db.flush()
+
+    account_for_event = billing_account or db.get(Account, tx.account_id)
+    if account_for_event:
+        _record_billing_transaction_event(
+            db,
+            account=account_for_event,
+            transaction=tx,
+            event=BillingTransactionEventType.CREATED,
+        )
+
     db.commit()
     db.refresh(tx)
 
@@ -202,6 +247,7 @@ def update_tx(tx_id: int, payload: TransactionCreate, db: Session = Depends(get_
             detail="No se permiten fechas futuras",
         )
     original_exportable_id = tx.exportable_movement_id
+    original_account_id = tx.account_id
     exportable_id = payload.exportable_movement_id
     description = payload.description
     movement: ExportableMovement | None = None
@@ -242,6 +288,31 @@ def update_tx(tx_id: int, payload: TransactionCreate, db: Session = Depends(get_
     tx.notes = payload.notes
     tx.exportable_movement_id = exportable_id
     db.add(tx)
+    db.flush()
+
+    account_for_event = billing_account or db.get(Account, tx.account_id)
+    original_account: Account | None = None
+    if original_account_id != tx.account_id:
+        original_account = db.get(Account, original_account_id)
+
+    if original_account and (
+        not account_for_event or account_for_event.id != original_account.id
+    ):
+        _record_billing_transaction_event(
+            db,
+            account=original_account,
+            transaction=tx,
+            event=BillingTransactionEventType.DELETED,
+        )
+
+    if account_for_event:
+        _record_billing_transaction_event(
+            db,
+            account=account_for_event,
+            transaction=tx,
+            event=BillingTransactionEventType.UPDATED,
+        )
+
     db.commit()
     db.refresh(tx)
     if notify_movement_id is not None and movement is not None and billing_account is not None:
@@ -297,6 +368,14 @@ def delete_tx(tx_id: int, db: Session = Depends(get_db)):
                 created_at=getattr(tx, "created_at", None),
             )
     if tx:
+        account_for_event = db.get(Account, tx.account_id)
+        if account_for_event:
+            _record_billing_transaction_event(
+                db,
+                account=account_for_event,
+                transaction=tx,
+                event=BillingTransactionEventType.DELETED,
+            )
         db.delete(tx)
         db.commit()
         if (

@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, List, Literal
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, conint
 from config.constants import Currency, InvoiceType
@@ -45,6 +45,14 @@ class TransactionWithBalance(TransactionOut):
     running_balance: Decimal
 
 
+class BillingTransactionEvent(BaseModel):
+    id: int
+    event: Literal["created", "updated", "deleted"]
+    occurred_at: datetime
+    transaction_id: Optional[int] = None
+    transaction: Optional[TransactionOut] = None
+
+
 class BillingSyncAck(BaseModel):
     movements_checkpoint_id: conint(ge=0)
     changes_checkpoint_id: conint(ge=0)
@@ -62,6 +70,7 @@ class BillingMovementsResponse(BaseModel):
     transactions_checkpoint_id: int
     has_more_transactions: bool
     transactions: List[TransactionOut]
+    transaction_events: List[BillingTransactionEvent]
     last_confirmed_change_id: int
     changes_checkpoint_id: int
     has_more_changes: bool
