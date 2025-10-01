@@ -112,9 +112,12 @@ def list_billing_movements(
     changes_has_more = len(change_rows) > changes_limit
     if changes_has_more:
         change_rows = change_rows[:changes_limit]
-    changes_checkpoint_id = (
-        change_rows[-1].id if change_rows else effective_changes_since
-    )
+    if change_rows:
+        changes_checkpoint_id = change_rows[-1].id
+    else:
+        changes_checkpoint_id = min(
+            effective_changes_since, change_sync_status.last_change_id
+        )
 
     return BillingMovementsResponse(
         last_confirmed_transaction_id=last_confirmed_id,
@@ -166,7 +169,8 @@ def acknowledge_billing_movements(
             detail="El checkpoint de cambios es menor al último confirmado",
         )
 
-    max_change_id = db.scalar(select(func.max(ExportableMovementChange.id))) or 0
+    db_max_change_id = db.scalar(select(func.max(ExportableMovementChange.id))) or 0
+    max_change_id = max(change_sync_status.last_change_id, db_max_change_id)
     if changes_checkpoint_id > max_change_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

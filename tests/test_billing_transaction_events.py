@@ -5,7 +5,8 @@ from typing import Sequence
 from config.constants import Currency
 from config.db import SessionLocal
 from fastapi.testclient import TestClient
-from models import Account
+from models import Account, ExportableMovementChange, ExportableMovementEvent
+from sqlalchemy import select
 
 
 def _decimal(value: str) -> Decimal:
@@ -101,3 +102,77 @@ def test_billing_transaction_event_flow(client: TestClient) -> None:
     assert second_payload["transactions"] == []
     assert second_payload["transaction_events"] == []
     assert second_payload["last_confirmed_transaction_id"] == checkpoint_id
+
+
+def test_acknowledge_changes_after_queue_purge(client: TestClient) -> None:
+    api_key = os.environ["BILLING_API_KEY"]
+
+    with SessionLocal() as db:
+        account = Account(
+            name="Cuenta Facturación",
+            opening_balance=Decimal("0"),
+            currency=Currency.ARS,
+            color="#123456",
+            is_active=True,
+            is_billing=True,
+        )
+        db.add(account)
+        db.commit()
+        db.refresh(account)
+
+        change = ExportableMovementChange(
+            movement_id=None,
+            event=ExportableMovementEvent.CREATED,
+            payload={"id": 1, "description": "Cambio exportable"},
+        )
+        db.add(change)
+        db.commit()
+        db.refresh(change)
+        change_id = change.id
+
+    first_list = client.get(
+        "/movimientos_cuenta_facturada",
+        headers={"X-API-Key": api_key},
+    )
+    assert first_list.status_code == 200, first_list.text
+    first_payload = first_list.json()
+    assert [item["id"] for item in first_payload["changes"]] == [change_id]
+
+    first_ack_payload = {
+        "movements_checkpoint_id": first_payload["transactions_checkpoint_id"],
+        "changes_checkpoint_id": first_payload["changes_checkpoint_id"],
+    }
+    first_ack = client.post(
+        "/movimientos_cuenta_facturada",
+        headers={"X-API-Key": api_key},
+        json=first_ack_payload,
+    )
+    assert first_ack.status_code == 200, first_ack.text
+    first_state = first_ack.json()
+    assert first_state["last_change_id"] == change_id
+
+    with SessionLocal() as db:
+        remaining_changes = db.scalar(select(ExportableMovementChange.id))
+        assert remaining_changes is None
+
+    second_list = client.get(
+        "/movimientos_cuenta_facturada",
+        params={"changes_since": change_id},
+        headers={"X-API-Key": api_key},
+    )
+    assert second_list.status_code == 200, second_list.text
+    second_payload = second_list.json()
+    assert second_payload["changes"] == []
+
+    second_ack_payload = {
+        "movements_checkpoint_id": second_payload["transactions_checkpoint_id"],
+        "changes_checkpoint_id": second_payload["changes_checkpoint_id"],
+    }
+    second_ack = client.post(
+        "/movimientos_cuenta_facturada",
+        headers={"X-API-Key": api_key},
+        json=second_ack_payload,
+    )
+    assert second_ack.status_code == 200, second_ack.text
+    second_state = second_ack.json()
+    assert second_state["last_change_id"] == change_id
