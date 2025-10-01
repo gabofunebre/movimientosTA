@@ -9,11 +9,18 @@ from config.db import get_db
 from models import (
     Account,
     BillingSyncStatus,
+    BillingTransactionEvent as BillingTransactionEventModel,
+    BillingTransactionEventType,
     ExportableMovementChange,
-    Transaction,
 )
 from routes.exportables import get_changes_sync_status
-from schemas import BillingMovementsResponse, BillingSyncAck, BillingSyncState
+from schemas import (
+    BillingMovementsResponse,
+    BillingSyncAck,
+    BillingSyncState,
+    BillingTransactionEvent as BillingTransactionEventSchema,
+    TransactionOut,
+)
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
 
@@ -57,20 +64,39 @@ def list_billing_movements(
     last_confirmed_change_id = change_sync_status.last_change_id
 
     stmt = (
-        select(Transaction)
+        select(BillingTransactionEventModel)
         .where(
-            Transaction.account_id == account.id,
-            Transaction.id > last_confirmed_id,
-            Transaction.exportable_movement_id.is_not(None),
+            BillingTransactionEventModel.account_id == account.id,
+            BillingTransactionEventModel.id > last_confirmed_id,
         )
-        .order_by(Transaction.id.asc())
+        .order_by(BillingTransactionEventModel.id.asc())
         .limit(limit + 1)
     )
-    rows = db.scalars(stmt).all()
-    has_more = len(rows) > limit
+    event_rows = db.scalars(stmt).all()
+    has_more = len(event_rows) > limit
     if has_more:
-        rows = rows[:limit]
-    checkpoint_id = rows[-1].id if rows else last_confirmed_id
+        event_rows = event_rows[:limit]
+    checkpoint_id = event_rows[-1].id if event_rows else last_confirmed_id
+
+    transactions: list[TransactionOut] = []
+    transaction_events: list[BillingTransactionEventSchema] = []
+
+    for event in event_rows:
+        payload = event.payload or {}
+        transaction_model: TransactionOut | None = None
+        if event.event != BillingTransactionEventType.DELETED and payload:
+            transaction_model = TransactionOut.model_validate(payload)
+            transactions.append(transaction_model)
+
+        transaction_events.append(
+            BillingTransactionEventSchema(
+                id=event.id,
+                event=event.event.value,
+                occurred_at=event.occurred_at,
+                transaction_id=event.transaction_id,
+                transaction=transaction_model,
+            )
+        )
 
     effective_changes_since = (
         changes_since if changes_since is not None else last_confirmed_change_id
@@ -94,7 +120,8 @@ def list_billing_movements(
         last_confirmed_transaction_id=last_confirmed_id,
         transactions_checkpoint_id=checkpoint_id,
         has_more_transactions=has_more,
-        transactions=rows,
+        transactions=transactions,
+        transaction_events=transaction_events,
         last_confirmed_change_id=last_confirmed_change_id,
         changes_checkpoint_id=changes_checkpoint_id,
         has_more_changes=changes_has_more,
@@ -121,11 +148,13 @@ def acknowledge_billing_movements(
             detail="El checkpoint es menor al último confirmado",
         )
 
-    max_transaction_id = db.scalar(
-        select(func.max(Transaction.id)).where(Transaction.account_id == account.id)
+    max_event_id = db.scalar(
+        select(func.max(BillingTransactionEventModel.id)).where(
+            BillingTransactionEventModel.account_id == account.id
+        )
     )
-    max_transaction_id = max_transaction_id or 0
-    if checkpoint_id > max_transaction_id:
+    max_event_id = max_event_id or 0
+    if checkpoint_id > max_event_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="El checkpoint indicado no existe para la cuenta de facturación",
