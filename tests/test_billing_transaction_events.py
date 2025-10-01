@@ -176,3 +176,27 @@ def test_acknowledge_changes_after_queue_purge(client: TestClient) -> None:
     assert second_ack.status_code == 200, second_ack.text
     second_state = second_ack.json()
     assert second_state["last_change_id"] == change_id
+
+    lower_changes_since = max(change_id - 1, 0)
+    lower_list = client.get(
+        "/movimientos_cuenta_facturada",
+        params={"changes_since": lower_changes_since},
+        headers={"X-API-Key": api_key},
+    )
+    assert lower_list.status_code == 200, lower_list.text
+    lower_payload = lower_list.json()
+    assert lower_payload["changes"] == []
+    assert lower_payload["changes_checkpoint_id"] == change_id
+
+    lower_ack_payload = {
+        "movements_checkpoint_id": lower_payload["transactions_checkpoint_id"],
+        "changes_checkpoint_id": lower_payload["changes_checkpoint_id"],
+    }
+    lower_ack = client.post(
+        "/movimientos_cuenta_facturada",
+        headers={"X-API-Key": api_key},
+        json=lower_ack_payload,
+    )
+    assert lower_ack.status_code == 200, lower_ack.text
+    lower_state = lower_ack.json()
+    assert lower_state["last_change_id"] == change_id

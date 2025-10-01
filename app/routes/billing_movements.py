@@ -115,9 +115,7 @@ def list_billing_movements(
     if change_rows:
         changes_checkpoint_id = change_rows[-1].id
     else:
-        changes_checkpoint_id = min(
-            effective_changes_since, change_sync_status.last_change_id
-        )
+        changes_checkpoint_id = change_sync_status.last_change_id
 
     return BillingMovementsResponse(
         last_confirmed_transaction_id=last_confirmed_id,
