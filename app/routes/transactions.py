@@ -7,7 +7,7 @@ from typing import Any, List, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 
 from config.db import get_db
@@ -218,6 +218,7 @@ def list_transactions(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     account_id: Optional[int] = None,
+    q: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     if start_date and end_date and start_date > end_date:
@@ -232,6 +233,17 @@ def list_transactions(
         stmt = stmt.where(Transaction.date <= end_date)
     if account_id:
         stmt = stmt.where(Transaction.account_id == account_id)
+    if q:
+        q_clean = q.strip()
+        if q_clean:
+            pattern = f"%{q_clean.lower()}%"
+            stmt = stmt.join(Account)
+            stmt = stmt.where(
+                or_(
+                    func.lower(Transaction.description).like(pattern),
+                    func.lower(Account.name).like(pattern),
+                )
+            )
     stmt = stmt.order_by(Transaction.date.desc(), Transaction.id.desc()).limit(limit).offset(offset)
     rows = db.scalars(stmt).all()
     return rows
