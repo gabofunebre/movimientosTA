@@ -97,6 +97,27 @@
       </div>
     </div>
   </div>
+  <div class="modal fade" id="tx-confirm-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Confirmar eliminación</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <p id="tx-confirm-message" class="mb-0"></p>
+          <div id="tx-confirm-error" class="alert alert-danger d-none mt-3" role="alert"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="tx-confirm-cancel">Cancelar</button>
+          <button type="button" class="btn btn-danger" id="tx-confirm-accept">
+            <span>Eliminar</span>
+            <span class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="modal fade" id="tx-filter-modal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
       <div class="modal-content">
