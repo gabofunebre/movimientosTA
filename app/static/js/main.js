@@ -42,6 +42,26 @@ const freqSelect = document.getElementById('freq-select');
 const descInput = document.getElementById('desc-input');
 const inkwellCheck = document.getElementById('inkwell-check');
 const inkwellSelect = document.getElementById('inkwell-select');
+const confirmModalEl = document.getElementById('tx-confirm-modal');
+const confirmModal = confirmModalEl ? new bootstrap.Modal(confirmModalEl) : null;
+const confirmMessageEl = confirmModalEl
+  ? confirmModalEl.querySelector('#tx-confirm-message')
+  : null;
+const confirmErrorEl = confirmModalEl
+  ? confirmModalEl.querySelector('#tx-confirm-error')
+  : null;
+const confirmAcceptBtn = confirmModalEl
+  ? confirmModalEl.querySelector('#tx-confirm-accept')
+  : null;
+const confirmCancelBtn = confirmModalEl
+  ? confirmModalEl.querySelector('#tx-confirm-cancel')
+  : null;
+const confirmSpinnerEl = confirmAcceptBtn
+  ? confirmAcceptBtn.querySelector('.spinner-border')
+  : null;
+const confirmCloseBtn = confirmModalEl
+  ? confirmModalEl.querySelector('.btn-close')
+  : null;
 
 let offset = 0;
 const limit = 50;
@@ -62,6 +82,42 @@ const filters = {
   account_id: '',
 };
 let hasMore = true;
+let pendingDeleteTx = null;
+let confirmIsProcessing = false;
+
+function setConfirmLoading(isLoading) {
+  if (!confirmAcceptBtn || !confirmCancelBtn) return;
+  confirmIsProcessing = isLoading;
+  confirmAcceptBtn.disabled = isLoading;
+  confirmCancelBtn.disabled = isLoading;
+  if (confirmCloseBtn) {
+    if (isLoading) {
+      confirmCloseBtn.setAttribute('disabled', 'disabled');
+    } else {
+      confirmCloseBtn.removeAttribute('disabled');
+    }
+  }
+  if (confirmSpinnerEl) {
+    confirmSpinnerEl.classList.toggle('d-none', !isLoading);
+  }
+}
+
+async function processDeletion(txId) {
+  showOverlay();
+  try {
+    const result = await deleteTransaction(txId);
+    if (!result.ok) {
+      return { ok: false, error: result.error || 'Error al eliminar movimiento.' };
+    }
+    await reloadTransactions();
+    return { ok: true };
+  } catch (error) {
+    console.error('Error deleting transaction', error);
+    return { ok: false, error: 'Error inesperado al eliminar movimiento.' };
+  } finally {
+    hideOverlay();
+  }
+}
 
 function formatDateForDisplay(value) {
   if (!value) return '';
@@ -304,13 +360,32 @@ function openEditModal(tx) {
 }
 
 async function confirmDelete(tx) {
-  if (!confirm('¿Eliminar movimiento?')) return;
-  showOverlay();
-  const result = await deleteTransaction(tx.id);
-  hideOverlay();
-  if (result.ok) {
-    await reloadTransactions();
-  } else {
+  if (confirmModal && confirmMessageEl) {
+    pendingDeleteTx = tx;
+    const description = tx.description?.trim();
+    const dateLabel = tx.date
+      ? new Date(tx.date).toLocaleDateString('es-AR')
+      : '';
+    const pieces = ['¿Eliminar el movimiento'];
+    if (description) {
+      pieces.push(`"${description}"`);
+    }
+    if (dateLabel) {
+      pieces.push(`del ${dateLabel}`);
+    }
+    confirmMessageEl.textContent = `${pieces.join(' ')}?`;
+    if (confirmErrorEl) {
+      confirmErrorEl.textContent = '';
+      confirmErrorEl.classList.add('d-none');
+    }
+    setConfirmLoading(false);
+    confirmModal.show();
+    return;
+  }
+
+  if (!window.confirm('¿Eliminar movimiento?')) return;
+  const result = await processDeletion(tx.id);
+  if (!result.ok) {
     alert(result.error || 'Error al eliminar');
   }
 }
@@ -422,6 +497,43 @@ inkwellSelect.addEventListener('change', () => {
   const movement = exportableMap[Number(inkwellSelect.value)];
   if (movement) applyExportable(movement);
 });
+
+if (confirmModalEl) {
+  confirmModalEl.addEventListener('hide.bs.modal', event => {
+    if (confirmIsProcessing) {
+      event.preventDefault();
+    }
+  });
+  confirmModalEl.addEventListener('hidden.bs.modal', () => {
+    pendingDeleteTx = null;
+    confirmIsProcessing = false;
+    if (confirmErrorEl) {
+      confirmErrorEl.textContent = '';
+      confirmErrorEl.classList.add('d-none');
+    }
+  });
+}
+
+if (confirmAcceptBtn) {
+  confirmAcceptBtn.addEventListener('click', async () => {
+    if (!pendingDeleteTx) return;
+    if (confirmErrorEl) {
+      confirmErrorEl.textContent = '';
+      confirmErrorEl.classList.add('d-none');
+    }
+    setConfirmLoading(true);
+    const result = await processDeletion(pendingDeleteTx.id);
+    setConfirmLoading(false);
+    if (result.ok) {
+      confirmModal?.hide();
+    } else if (confirmErrorEl) {
+      confirmErrorEl.textContent = result.error || 'Error al eliminar movimiento.';
+      confirmErrorEl.classList.remove('d-none');
+    } else {
+      alert(result.error || 'Error al eliminar movimiento.');
+    }
+  });
+}
 
 function populateFreqSelect() {
   freqSelect.innerHTML = '';
