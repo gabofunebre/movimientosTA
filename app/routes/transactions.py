@@ -113,6 +113,7 @@ def _notify_billing_movement(
         "account_name": account_name or None,
         "account_currency": currency_value,
         "movement_id": movement.id,
+        "id_movimiento": movement.id,
         "movement_description": movement.description,
         "description": transaction.description,
         "event": event,
