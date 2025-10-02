@@ -11,6 +11,10 @@ export async function fetchTransactions(limit, offset, filters = {}) {
   if (filters.start_date) params.append('start_date', filters.start_date);
   if (filters.end_date) params.append('end_date', filters.end_date);
   if (filters.account_id) params.append('account_id', filters.account_id);
+  if (filters.q) {
+    const search = filters.q.trim();
+    if (search) params.append('q', search);
+  }
   const res = await fetch(`/transactions?${params.toString()}`);
   return res.json();
 }

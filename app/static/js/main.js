@@ -80,10 +80,14 @@ const filters = {
   start_date: '',
   end_date: '',
   account_id: '',
+  q: '',
 };
 let hasMore = true;
 let pendingDeleteTx = null;
 let confirmIsProcessing = false;
+const SEARCH_DEBOUNCE_MS = 300;
+let searchDebounceId = null;
+let requestToken = 0;
 
 function setConfirmLoading(isLoading) {
   if (!confirmAcceptBtn || !confirmCancelBtn) return;
@@ -133,12 +137,8 @@ function formatDateForDisplay(value) {
 }
 
 function renderTransactions() {
-  const q = searchBox.value.trim().toLowerCase();
-  const filtered = transactions.filter(tx => {
-    const accName = accountMap[tx.account_id]?.name.toLowerCase() || '';
-    return tx.description.toLowerCase().includes(q) || accName.includes(q);
-  });
-  filtered.sort((a, b) => {
+  const rows = [...transactions];
+  rows.sort((a, b) => {
     switch (sortColumn) {
       case 0:
         return sortAsc
@@ -159,14 +159,19 @@ function renderTransactions() {
     }
   });
   tbody.innerHTML = '';
-  filtered.forEach(tx => renderTransaction(tbody, tx, accountMap, openEditModal, confirmDelete));
+  rows.forEach(tx => renderTransaction(tbody, tx, accountMap, openEditModal, confirmDelete));
 }
 
 async function loadMore() {
   if (loading || !hasMore) return;
   loading = true;
+  const token = requestToken;
   try {
-    const data = await fetchTransactions(limit, offset, filters);
+    const params = { ...filters };
+    const data = await fetchTransactions(limit, offset, params);
+    if (token !== requestToken) {
+      return;
+    }
     transactions = transactions.concat(data);
     offset += data.length;
     if (data.length < limit) {
@@ -174,15 +179,40 @@ async function loadMore() {
     }
     renderTransactions();
   } finally {
-    loading = false;
+    if (token === requestToken) {
+      loading = false;
+    }
   }
 }
 
 async function reloadTransactions() {
+  if (searchDebounceId) {
+    clearTimeout(searchDebounceId);
+    searchDebounceId = null;
+  }
   transactions = [];
   offset = 0;
   hasMore = true;
+  loading = false;
+  requestToken += 1;
+  container.scrollTop = 0;
+  renderTransactions();
   await loadMore();
+}
+
+function handleSearchInput() {
+  const value = searchBox.value.trim();
+  if (value === filters.q) {
+    return;
+  }
+  filters.q = value;
+  if (searchDebounceId) {
+    clearTimeout(searchDebounceId);
+  }
+  searchDebounceId = window.setTimeout(() => {
+    searchDebounceId = null;
+    reloadTransactions();
+  }, SEARCH_DEBOUNCE_MS);
 }
 
 function updateFilterButtonState() {
@@ -446,7 +476,7 @@ function handleInkwellChange() {
 
 document.getElementById('add-income').addEventListener('click', () => openModal('income'));
 document.getElementById('add-expense').addEventListener('click', () => openModal('expense'));
-searchBox.addEventListener('input', renderTransactions);
+searchBox.addEventListener('input', handleSearchInput);
 if (filterBtn && filterModal && filterForm) {
   filterBtn.addEventListener('click', () => {
     if (filterStartInput) filterStartInput.value = filters.start_date;
