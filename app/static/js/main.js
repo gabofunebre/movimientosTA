@@ -379,10 +379,9 @@ function openEditModal(tx) {
     inkwellCheck.checked = true;
     handleInkwellChange();
     if (inkwellCheck.checked) {
-      populateInkwellSelect(String(tx.exportable_movement_id));
+      const selectedValue = populateInkwellSelect(String(tx.exportable_movement_id));
       inkwellSelect.classList.remove('d-none');
-      descInput.classList.add('d-none');
-      applyExportable(exportableMap[tx.exportable_movement_id]);
+      applyInkwellSelection(selectedValue);
       populateAccountSelect(true, tx.account_id);
     }
   }
@@ -457,11 +456,9 @@ function handleInkwellChange() {
     freqCheck.checked = false;
     freqCheck.disabled = true;
     freqSelect.classList.add('d-none');
-    populateInkwellSelect();
+    const selectedValue = populateInkwellSelect();
     inkwellSelect.classList.remove('d-none');
-    descInput.classList.add('d-none');
-    const movement = exportableMap[Number(inkwellSelect.value)];
-    applyExportable(movement);
+    applyInkwellSelection(selectedValue);
     const targetAccountId = currentAccountId !== null ? currentAccountId : billingAccountId;
     populateAccountSelect(true, targetAccountId);
   } else {
@@ -524,8 +521,7 @@ freqSelect.addEventListener('change', () => {
 });
 
 inkwellSelect.addEventListener('change', () => {
-  const movement = exportableMap[Number(inkwellSelect.value)];
-  if (movement) applyExportable(movement);
+  applyInkwellSelection(inkwellSelect.value);
 });
 
 if (confirmModalEl) {
@@ -583,18 +579,39 @@ function applyFrequent(f) {
   descInput.value = f.description;
 }
 
+function applyInkwellSelection(value) {
+  const isCustom = value === 'custom';
+  if (isCustom) {
+    descInput.classList.remove('d-none');
+    return;
+  }
+  descInput.classList.add('d-none');
+  const movement = exportableMap[value];
+  if (movement) applyExportable(movement);
+}
+
 function populateInkwellSelect(selectedId = null) {
+  const previousValue = selectedId ?? inkwellSelect.value ?? '';
   inkwellSelect.innerHTML = '';
   exportables.forEach(movement => {
     const opt = document.createElement('option');
-    opt.value = movement.id;
+    opt.value = String(movement.id);
     opt.textContent = movement.description;
     inkwellSelect.appendChild(opt);
   });
-  if (inkwellSelect.options.length > 0) {
-    const valueToSelect = selectedId || inkwellSelect.options[0].value;
-    inkwellSelect.value = valueToSelect;
+  const customOpt = document.createElement('option');
+  customOpt.value = 'custom';
+  customOpt.textContent = 'Personalizado';
+  customOpt.classList.add('fst-italic');
+  inkwellSelect.appendChild(customOpt);
+
+  const optionValues = Array.from(inkwellSelect.options).map(opt => opt.value);
+  let valueToSelect = optionValues.includes(previousValue) ? previousValue : '';
+  if (!valueToSelect) {
+    valueToSelect = exportables.length ? String(exportables[0].id) : 'custom';
   }
+  inkwellSelect.value = valueToSelect;
+  return valueToSelect;
 }
 
 function applyExportable(movement) {
@@ -657,17 +674,30 @@ form.addEventListener('submit', async e => {
   }
 
   if (inkwellCheck.checked) {
-    const selectedId = Number(inkwellSelect.value);
-    const movement = exportableMap[selectedId];
-    if (!movement) {
+    const selectedValue = inkwellSelect.value;
+    if (selectedValue === 'custom') {
+      payload.exportable_movement_id = null;
+    } else {
+      const movement = exportableMap[selectedValue];
+      if (!movement) {
+        alertBox.classList.remove('d-none', 'alert-success', 'alert-danger');
+        alertBox.classList.add('alert-danger');
+        alertBox.textContent = 'Seleccioná un movimiento Inkwell válido';
+        return;
+      }
+      payload.exportable_movement_id = movement.id;
+      payload.description = movement.description;
+      payload.account_id = billingAccountId || payload.account_id;
+    }
+    if (selectedValue !== 'custom' && !payload.exportable_movement_id) {
       alertBox.classList.remove('d-none', 'alert-success', 'alert-danger');
       alertBox.classList.add('alert-danger');
       alertBox.textContent = 'Seleccioná un movimiento Inkwell válido';
       return;
     }
-    payload.exportable_movement_id = movement.id;
-    payload.description = movement.description;
-    payload.account_id = billingAccountId || payload.account_id;
+    if (selectedValue === 'custom') {
+      descInput.classList.remove('d-none');
+    }
   }
 
   showOverlay();
