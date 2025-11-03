@@ -30,6 +30,20 @@ LOGGER = logging.getLogger(__name__)
 EventType = Literal["created", "updated", "deleted"]
 
 
+def _get_billing_account(db: Session) -> Account | None:
+    return db.scalar(select(Account).where(Account.is_billing.is_(True)))
+
+
+def _require_billing_account(db: Session, *, account_id: int) -> Account:
+    billing_account = _get_billing_account(db)
+    if not billing_account or billing_account.id != account_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Los movimientos Inkwell solo pueden registrarse en la cuenta de facturación",
+        )
+    return billing_account
+
+
 def _serialize_transaction_for_event(transaction: Transaction) -> dict[str, Any]:
     return TransactionOut.model_validate(transaction).model_dump(mode="json")
 
@@ -154,6 +168,12 @@ def create_tx(payload: TransactionCreate, db: Session = Depends(get_db)):
             detail="No se permiten fechas futuras",
         )
     exportable_id = payload.exportable_movement_id
+    is_custom_inkwell = payload.is_custom_inkwell
+    if exportable_id is not None and is_custom_inkwell:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debe elegir un movimiento exportable clásico o un Inkwell personalizado, no ambos",
+        )
     description = payload.description
     movement: ExportableMovement | None = None
     billing_account: Account | None = None
@@ -164,13 +184,11 @@ def create_tx(payload: TransactionCreate, db: Session = Depends(get_db)):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Movimiento Inkwell no encontrado",
             )
-        billing_account = db.scalar(select(Account).where(Account.is_billing.is_(True)))
-        if not billing_account or payload.account_id != billing_account.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Los movimientos Inkwell solo pueden registrarse en la cuenta de facturación",
-            )
+        billing_account = _require_billing_account(db, account_id=payload.account_id)
         description = movement.description
+        is_custom_inkwell = False
+    elif is_custom_inkwell:
+        billing_account = _require_billing_account(db, account_id=payload.account_id)
     tx = Transaction(
         account_id=payload.account_id,
         date=payload.date,
@@ -178,6 +196,7 @@ def create_tx(payload: TransactionCreate, db: Session = Depends(get_db)):
         amount=payload.amount,
         notes=payload.notes,
         exportable_movement_id=exportable_id,
+        is_custom_inkwell=is_custom_inkwell,
     )
     db.add(tx)
     db.flush()
@@ -262,6 +281,12 @@ def update_tx(tx_id: int, payload: TransactionCreate, db: Session = Depends(get_
     original_exportable_id = tx.exportable_movement_id
     original_account_id = tx.account_id
     exportable_id = payload.exportable_movement_id
+    is_custom_inkwell = payload.is_custom_inkwell
+    if exportable_id is not None and is_custom_inkwell:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debe elegir un movimiento exportable clásico o un Inkwell personalizado, no ambos",
+        )
     description = payload.description
     movement: ExportableMovement | None = None
     billing_account: Account | None = None
@@ -272,13 +297,11 @@ def update_tx(tx_id: int, payload: TransactionCreate, db: Session = Depends(get_
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Movimiento Inkwell no encontrado",
             )
-        billing_account = db.scalar(select(Account).where(Account.is_billing.is_(True)))
-        if not billing_account or payload.account_id != billing_account.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Los movimientos Inkwell solo pueden registrarse en la cuenta de facturación",
-            )
+        billing_account = _require_billing_account(db, account_id=payload.account_id)
         description = movement.description
+        is_custom_inkwell = False
+    elif is_custom_inkwell:
+        billing_account = _require_billing_account(db, account_id=payload.account_id)
     elif original_exportable_id is not None:
         movement = db.get(ExportableMovement, original_exportable_id)
         if not movement:
@@ -286,20 +309,20 @@ def update_tx(tx_id: int, payload: TransactionCreate, db: Session = Depends(get_
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Movimiento Inkwell no encontrado",
             )
-    notify_movement_id = exportable_id if exportable_id is not None else original_exportable_id
+    notify_movement_id = (
+        exportable_id
+        if exportable_id is not None
+        else (original_exportable_id if original_exportable_id is not None and not is_custom_inkwell else None)
+    )
     if notify_movement_id is not None and billing_account is None:
-        billing_account = db.scalar(select(Account).where(Account.is_billing.is_(True)))
-        if not billing_account:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Los movimientos Inkwell solo pueden registrarse en la cuenta de facturación",
-            )
+        billing_account = _require_billing_account(db, account_id=payload.account_id)
     tx.account_id = payload.account_id
     tx.date = payload.date
     tx.description = description
     tx.amount = payload.amount
     tx.notes = payload.notes
     tx.exportable_movement_id = exportable_id
+    tx.is_custom_inkwell = is_custom_inkwell
     db.add(tx)
     db.flush()
 
