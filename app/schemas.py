@@ -26,6 +26,7 @@ class TransactionCreate(BaseModel):
     amount: Decimal
     notes: str = ""
     exportable_movement_id: int | None = None
+    is_custom_inkwell: bool = False
 
 
 class TransactionOut(BaseModel):
@@ -36,6 +37,7 @@ class TransactionOut(BaseModel):
     amount: Decimal
     notes: str
     exportable_movement_id: int | None = None
+    is_custom_inkwell: bool = False
 
     class Config:
         from_attributes = True
