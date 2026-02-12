@@ -78,6 +78,9 @@ def list_billing_movements(
         event_rows = event_rows[:limit]
     checkpoint_id = event_rows[-1].id if event_rows else last_confirmed_id
 
+    # `transaction_events` es la fuente de verdad para sincronización incremental.
+    # `transactions` y `active_transactions_in_batch` son conveniencias con payload
+    # únicamente para eventos no eliminados del lote actual.
     transactions: list[TransactionOut] = []
     transaction_events: list[BillingTransactionEventSchema] = []
 
@@ -122,6 +125,7 @@ def list_billing_movements(
         transactions_checkpoint_id=checkpoint_id,
         has_more_transactions=has_more,
         transactions=transactions,
+        active_transactions_in_batch=transactions,
         transaction_events=transaction_events,
         last_confirmed_change_id=last_confirmed_change_id,
         changes_checkpoint_id=changes_checkpoint_id,

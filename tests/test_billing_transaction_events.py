@@ -72,6 +72,7 @@ def test_billing_transaction_event_flow(client: TestClient) -> None:
     assert [item["id"] for item in transactions] == [transaction_id, transaction_id]
     assert _decimal(transactions[0]["amount"]) == Decimal("100.00")
     assert _decimal(transactions[1]["amount"]) == Decimal("250.50")
+    assert payload["active_transactions_in_batch"] == transactions
 
     assert payload["has_more_transactions"] is False
     assert payload["last_confirmed_transaction_id"] == 0
@@ -200,3 +201,56 @@ def test_acknowledge_changes_after_queue_purge(client: TestClient) -> None:
     assert lower_ack.status_code == 200, lower_ack.text
     lower_state = lower_ack.json()
     assert lower_state["last_change_id"] == change_id
+
+
+def test_billing_transaction_events_support_event_sourced_projection(client: TestClient) -> None:
+    api_key = os.environ["BILLING_API_KEY"]
+
+    with SessionLocal() as db:
+        account = Account(
+            name="Cuenta Facturación",
+            opening_balance=Decimal("0"),
+            currency=Currency.ARS,
+            color="#123456",
+            is_active=True,
+            is_billing=True,
+        )
+        db.add(account)
+        db.commit()
+        db.refresh(account)
+        account_id = account.id
+
+    create_payload = {
+        "account_id": account_id,
+        "date": "2023-01-01",
+        "description": "Alta",
+        "amount": "99.99",
+        "notes": "event sourced",
+        "exportable_movement_id": None,
+    }
+    create_response = client.post("/transactions", json=create_payload)
+    assert create_response.status_code == 200, create_response.text
+    transaction_id = create_response.json()["id"]
+
+    delete_response = client.delete(f"/transactions/{transaction_id}")
+    assert delete_response.status_code == 204, delete_response.text
+
+    list_response = client.get(
+        "/movimientos_cuenta_facturada",
+        headers={"X-API-Key": api_key},
+    )
+    assert list_response.status_code == 200, list_response.text
+    payload = list_response.json()
+
+    # Consumidor event-sourced: aplica solo `transaction_events`.
+    available_transactions: dict[int, dict] = {}
+    for event in payload["transaction_events"]:
+        event_type = event["event"]
+        if event_type in {"created", "updated"}:
+            available_transactions[event["transaction"]["id"]] = event["transaction"]
+        elif event_type == "deleted":
+            available_transactions.pop(event["transaction_id"], None)
+
+    assert available_transactions == {}
+    assert payload["transactions"] and payload["active_transactions_in_batch"]
+

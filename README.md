@@ -7,6 +7,7 @@ Aplicación web basada en FastAPI para registrar movimientos de dinero y factura
 - [Características](#características)
 - [Guía rápida de uso](#guía-rápida-de-uso)
 - [Notificaciones interoperables](#notificaciones-interoperables)
+- [Sincronización incremental de cuenta de facturación](#sincronización-incremental-de-cuenta-de-facturación)
 - [Movimientos exportables](#movimientos-exportables)
 - [Cálculos de moneda](#cálculos-de-moneda)
 - [Desarrollo con Docker](#desarrollo-con-docker)
@@ -46,6 +47,16 @@ Variables de entorno relevantes:
 - `PEER_BASE_URL`: URL HTTPS base de la app hermana para envíos salientes.
 
 Existe además una tarea en segundo plano que elimina diariamente las notificaciones leídas con más de 90 días de antigüedad.
+
+
+## Sincronización incremental de cuenta de facturación
+
+El endpoint `GET /movimientos_cuenta_facturada` expone dos vistas del mismo lote, con propósitos distintos:
+
+- `transaction_events`: **fuente de verdad** para sincronización incremental. Incluye `created`, `updated` y `deleted`, por lo que un consumidor event-sourced debe aplicar esta secuencia para reconstruir el estado remoto.
+- `transactions` y `active_transactions_in_batch`: campos de **conveniencia** que incluyen solo payloads no eliminados (`created`/`updated`) del lote actual.
+
+Importante: las bajas **solo** se representan en `transaction_events` mediante eventos con `event=deleted` y `transaction=null` + `transaction_id` para purgar entidades en el consumidor. Por diseño, nunca aparecen en `transactions` ni en `active_transactions_in_batch`.
 
 ## Movimientos exportables
 

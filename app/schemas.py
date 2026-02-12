@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, List, Literal, Optional
 
-from pydantic import BaseModel, conint
+from pydantic import BaseModel, Field, conint
 from config.constants import Currency, InvoiceType
 from models import NotificationPriority, NotificationStatus
 
@@ -71,7 +71,20 @@ class BillingMovementsResponse(BaseModel):
     last_confirmed_transaction_id: int
     transactions_checkpoint_id: int
     has_more_transactions: bool
-    transactions: List[TransactionOut]
+    transactions: List[TransactionOut] = Field(
+        default_factory=list,
+        description=(
+            "Conveniencia del payload para transacciones no eliminadas del lote. "
+            "No es fuente de verdad para sincronización incremental."
+        ),
+    )
+    active_transactions_in_batch: List[TransactionOut] = Field(
+        default_factory=list,
+        description=(
+            "Alias explícito de `transactions`: solo incluye payloads no-deleted "
+            "presentes en el lote actual."
+        ),
+    )
     transaction_events: List[BillingTransactionEvent]
     last_confirmed_change_id: int
     changes_checkpoint_id: int
