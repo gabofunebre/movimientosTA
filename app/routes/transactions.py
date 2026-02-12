@@ -281,6 +281,8 @@ def update_tx(tx_id: int, payload: TransactionCreate, db: Session = Depends(get_
     original_exportable_id = tx.exportable_movement_id
     original_account_id = tx.account_id
     exportable_id = payload.exportable_movement_id
+    was_inkwell = original_exportable_id is not None
+    is_inkwell_now = exportable_id is not None
     is_custom_inkwell = payload.is_custom_inkwell
     if exportable_id is not None and is_custom_inkwell:
         raise HTTPException(
@@ -302,19 +304,29 @@ def update_tx(tx_id: int, payload: TransactionCreate, db: Session = Depends(get_
         is_custom_inkwell = False
     elif is_custom_inkwell:
         billing_account = _require_billing_account(db, account_id=payload.account_id)
-    elif original_exportable_id is not None:
+        if was_inkwell:
+            movement = db.get(ExportableMovement, original_exportable_id)
+            if not movement:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Movimiento Inkwell no encontrado",
+                )
+    elif was_inkwell:
         movement = db.get(ExportableMovement, original_exportable_id)
         if not movement:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Movimiento Inkwell no encontrado",
             )
-    notify_movement_id = (
-        exportable_id
-        if exportable_id is not None
-        else (original_exportable_id if original_exportable_id is not None and not is_custom_inkwell else None)
-    )
-    if notify_movement_id is not None and billing_account is None:
+    notification_event: EventType | None = None
+    if not was_inkwell and is_inkwell_now:
+        notification_event = "created"
+    elif was_inkwell and is_inkwell_now:
+        notification_event = "updated"
+    elif was_inkwell and not is_inkwell_now:
+        notification_event = "deleted"
+
+    if notification_event is not None and billing_account is None:
         billing_account = _require_billing_account(db, account_id=payload.account_id)
     tx.account_id = payload.account_id
     tx.date = payload.date
@@ -351,10 +363,10 @@ def update_tx(tx_id: int, payload: TransactionCreate, db: Session = Depends(get_
 
     db.commit()
     db.refresh(tx)
-    if notify_movement_id is not None and movement is not None and billing_account is not None:
+    if notification_event is not None and movement is not None and billing_account is not None:
         try:
             _notify_billing_movement(
-                event="updated",
+                event=notification_event,
                 transaction=tx,
                 account=billing_account,
                 movement=movement,
