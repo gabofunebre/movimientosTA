@@ -71,7 +71,7 @@ async function toggleDetails(row, acc) {
     ? inkwellTotals.available
     : Number(summary.inkwell_available || 0);
   const total = summary.is_billing
-    ? Number(summary.income_balance) - Number(summary.expense_balance) - inkwellAvailable
+    ? balance - inkwellAvailable
     : balance;
 
   let html = '<div class="container text-start">';
