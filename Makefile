@@ -1,10 +1,13 @@
 # Helper Makefile para desarrollo y automatización
 
 APP_SVC ?= app
+DB_SVC ?= db
 DOCKER_COMPOSE ?= docker compose
 MSG ?= update
+REF ?= main
+HEALTH_URL ?= http://localhost:8000/health
 
-.PHONY: help up down down-v start stop restart ps logs shell rebuild rebuild-v push pull prune run
+.PHONY: help up down down-v start stop restart ps logs shell rebuild rebuild-v push pull prune run backup restore deploy smoke
 
 help:
 	@echo "Comandos disponibles:"
@@ -31,6 +34,12 @@ help:
 	@echo "Utilidades:"
 	@echo "  make prune    - Limpia recursos docker sin usar"
 	@echo "  make run cmd  - Ejecuta un comando dentro del contenedor principal (ej: make run ls -la)"
+	@echo ""
+	@echo "Operación datos/deploy:"
+	@echo "  make backup               - Genera dump lógico en ./backups"
+	@echo "  make restore DUMP=...     - Restaura un dump en la base local"
+	@echo "  make deploy DUMP=... REF=main - Hace restore + deploy con ref git"
+	@echo "  make smoke                - Ejecuta smoke test contra /health"
 
 # Contenedores
 up:
@@ -86,6 +95,27 @@ prune:
 # Ejecutar comando dentro del contenedor
 run:
 	$(DOCKER_COMPOSE) exec $(APP_SVC) $(filter-out $@,$(MAKECMDGOALS))
+
+backup:
+	bash scripts/backup_db.sh
+
+restore:
+	@if [ -z "$(DUMP)" ]; then \
+		echo "❌ Debes indicar DUMP=... (ruta al archivo .dump)"; \
+		exit 1; \
+	fi
+	RESTORE_ONLY=1 bash scripts/restore_and_deploy.sh "$(DUMP)" "$(REF)"
+
+deploy:
+	@if [ -z "$(DUMP)" ]; then \
+		echo "❌ Debes indicar DUMP=... (ruta al archivo .dump)"; \
+		exit 1; \
+	fi
+	bash scripts/restore_and_deploy.sh "$(DUMP)" "$(REF)"
+
+smoke:
+	@echo "▶ Ejecutando smoke test en $(HEALTH_URL)"
+	curl -fsS "$(HEALTH_URL)" >/dev/null && echo "✅ Smoke test OK"
 
 # Target wildcard
 %:
