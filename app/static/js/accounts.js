@@ -94,7 +94,7 @@ async function toggleDetails(row, acc) {
     html += '</div>';
   }
   html += '</div>';
-  html += `<div class="row mt-3"><div class="col text-center"><p class="mb-0"><strong>Total Disponible:</strong> <span class="text-dark fw-bold fs-5">${symbol} ${formatCurrency(total)}</span></p></div></div>`;
+  html += `<div class="row mt-3"><div class="col text-center"><p class="mb-0"><strong>Total disponible TA:</strong> <span class="text-dark fw-bold fs-5">${symbol} ${formatCurrency(total)}</span></p></div></div>`;
   html += '</div>';
   detailTd.innerHTML = html;
   detailTr.appendChild(detailTd);
