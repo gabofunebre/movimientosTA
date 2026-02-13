@@ -192,3 +192,86 @@ Los contenedores no exponen puertos al host y se comunican entre sí por nombre 
 - PostgreSQL lo hace en el puerto `5432` del contenedor `movdin-db`
 
 La aplicación también se une a la red externa `cloudflared_net` para poder ser accesible desde otros servicios. Utiliza `docker compose exec` u otros contenedores para interactuar con los servicios.
+
+## Operación: backup, restore y deploy entre servidores
+
+Esta sección estandariza la operatoria para mover datos y desplegar entre servidores, replicando el flujo operativo de Movdin.
+
+### Conceptos clave
+
+- **Dump**: respaldo lógico de PostgreSQL (archivo `.dump`) generado con `pg_dump -Fc`.
+- **Restore**: restauración del dump en otra base usando `pg_restore`.
+- **Smoke test**: verificación rápida post-deploy para confirmar que la app responde en `/health`.
+
+### Flujo operativo recomendado
+
+1. **Origen**: generar backup.
+2. **Infraestructura**: transferir el `.dump` al servidor destino.
+3. **Destino**: restaurar base y desplegar código.
+4. **Destino**: ejecutar smoke test final.
+
+> Nota: el transporte del archivo `.dump` **no** lo hacen los scripts de aplicación. Se delega a infraestructura (por ejemplo `scp`, `rsync` o mecanismo equivalente).
+
+### Paso a paso
+
+#### 1) En servidor origen: backup
+
+```bash
+make backup
+```
+
+Por defecto el dump queda en `./backups/` con timestamp. También puede ejecutarse el script directamente:
+
+```bash
+bash scripts/backup_db.sh
+```
+
+#### 2) Transferencia del dump (infraestructura)
+
+Ejemplos:
+
+```bash
+scp backups/db_usada_20250101_120000.dump usuario@destino:/ruta/backups/
+```
+
+```bash
+rsync -avz backups/db_usada_20250101_120000.dump usuario@destino:/ruta/backups/
+```
+
+#### 3) En servidor destino: restore y/o restore + deploy
+
+Solo restore de datos (sin actualización de código):
+
+```bash
+make restore DUMP=/ruta/backups/db_usada_20250101_120000.dump
+```
+
+Restore + deploy completo:
+
+```bash
+make deploy DUMP=/ruta/backups/db_usada_20250101_120000.dump REF=main
+```
+
+O bien:
+
+```bash
+bash scripts/restore_and_deploy.sh /ruta/backups/db_usada_20250101_120000.dump main
+```
+
+Si `REF=main`, el proceso hace `git pull --ff-only` para evitar merges no fast-forward.
+
+#### 4) Smoke test
+
+```bash
+make smoke
+```
+
+### Rollback básico (referencial)
+
+Si el deploy presenta problemas:
+
+1. Volver al ref/tag estable previo (`git checkout <ref_estable>`).
+2. Restaurar un dump anterior válido.
+3. Levantar servicios y repetir smoke test.
+
+Esto minimiza tiempo de degradación y deja un camino de recuperación claro.
