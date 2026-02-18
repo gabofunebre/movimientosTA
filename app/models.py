@@ -20,6 +20,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     JSON,
+    desc,
 )
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -41,6 +42,43 @@ class Account(Base):
 
     transactions = relationship("Transaction", back_populates="account")
     invoices = relationship("Invoice", back_populates="account")
+    cycles = relationship("AccountCycle", back_populates="account")
+
+
+class AccountCycle(Base):
+    __tablename__ = "account_cycles"
+    __table_args__ = (
+        Index(
+            "ix_account_cycles_account_id_closed_at_desc",
+            "account_id",
+            desc("closed_at"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+
+    opening_balance_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    income_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    expense_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    balance_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+
+    inkwell_income_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    inkwell_expense_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    inkwell_available_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+
+    purchase_iva_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    sales_iva_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    iibb_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    account = relationship("Account", back_populates="cycles")
 
 
 class Transaction(Base):
@@ -244,4 +282,3 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-

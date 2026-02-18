@@ -197,6 +197,31 @@ class AccountSummary(BaseModel):
     iibb: Decimal | None = None
 
 
+
+
+class AccountCycleOut(BaseModel):
+    id: int
+    account_id: int
+    closed_at: datetime
+    closed_by_user_id: int | None = None
+    opening_balance_snapshot: Decimal
+    income_snapshot: Decimal
+    expense_snapshot: Decimal
+    balance_snapshot: Decimal
+    inkwell_income_snapshot: Decimal
+    inkwell_expense_snapshot: Decimal
+    inkwell_available_snapshot: Decimal
+    purchase_iva_snapshot: Decimal | None = None
+    sales_iva_snapshot: Decimal | None = None
+    iibb_snapshot: Decimal | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class AccountCycleListResponse(BaseModel):
+    items: List[AccountCycleOut]
+
 class InkwellInvoice(BaseModel):
     id: int
     date: date
