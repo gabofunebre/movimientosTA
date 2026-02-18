@@ -1,7 +1,9 @@
 import {
   fetchAccountBalances,
   fetchAccountSummary,
-  fetchInkwellBillingData
+  fetchInkwellBillingData,
+  closeAccountCycle,
+  fetchAccountCycles
 } from './api.js?v=1';
 import { showOverlay, hideOverlay, formatCurrency } from './ui.js?v=1';
 import { CURRENCY_SYMBOLS } from './constants.js?v=1';
@@ -9,6 +11,86 @@ import { calculateInkwellTotals } from './inkwell_calculator.js?v=1';
 
 const tbody = document.querySelector('#accounts-table tbody');
 const refreshBtn = document.getElementById('refresh-accounts');
+
+const closeCycleModalEl = document.getElementById('close-cycle-modal');
+const closeCycleMessage = document.getElementById('close-cycle-message');
+const closeCycleHistory = document.getElementById('close-cycle-history');
+const confirmCloseCycleBtn = document.getElementById('confirm-close-cycle');
+const closeCycleError = document.getElementById('close-cycle-error');
+const closeCycleModal = closeCycleModalEl ? new bootstrap.Modal(closeCycleModalEl) : null;
+
+let selectedBillingAccount = null;
+
+function renderCycleHistory(cycles, symbol) {
+  if (!closeCycleHistory) return;
+  const items = Array.isArray(cycles?.items) ? cycles.items : [];
+  if (!items.length) {
+    closeCycleHistory.innerHTML = '<p class="text-muted mb-0">Todavía no hay cierres registrados.</p>';
+    return;
+  }
+
+  const rows = items
+    .slice(0, 5)
+    .map(cycle => {
+      const closedAt = new Date(cycle.closed_at).toLocaleString('es-AR');
+      return `<li class="list-group-item d-flex justify-content-between align-items-center"><span>${closedAt}</span><strong>${symbol} ${formatCurrency(cycle.balance_snapshot)}</strong></li>`;
+    })
+    .join('');
+
+  closeCycleHistory.innerHTML = `<p class="small text-muted mb-2">Últimos cierres:</p><ul class="list-group list-group-flush">${rows}</ul>`;
+}
+
+async function openCloseCycleModal(acc) {
+  if (!closeCycleModal) return;
+  selectedBillingAccount = acc;
+  const symbol = CURRENCY_SYMBOLS[acc.currency] || '';
+  closeCycleError?.classList.add('d-none');
+  closeCycleError.textContent = '';
+  confirmCloseCycleBtn.disabled = true;
+  closeCycleMessage.innerHTML = `
+    <p class="mb-2">Al confirmar el cierre del ciclo se realizará un <strong>snapshot</strong> de los valores actuales.</p>
+    <ul class="mb-0">
+      <li>El balance al cierre pasará a ser el nuevo <strong>saldo inicial</strong>.</li>
+      <li>Los <strong>ingresos y egresos</strong> visibles del nuevo ciclo se reiniciarán.</li>
+      <li>También se reiniciarán las métricas visibles de <strong>Inkwell</strong> para el nuevo ciclo.</li>
+    </ul>
+  `;
+  closeCycleHistory.innerHTML = '<p class="text-muted mb-0">Cargando historial de cierres...</p>';
+  closeCycleModal.show();
+
+  try:
+    const cycles = await fetchAccountCycles(acc.account_id);
+    renderCycleHistory(cycles, symbol);
+  } catch (error) {
+    closeCycleHistory.innerHTML = `<p class="text-danger mb-0">${error.message}</p>`;
+  } finally {
+    confirmCloseCycleBtn.disabled = false;
+  }
+}
+
+async function handleConfirmCloseCycle() {
+  if (!selectedBillingAccount) return;
+  confirmCloseCycleBtn.disabled = true;
+  closeCycleError?.classList.add('d-none');
+  closeCycleError.textContent = '';
+  showOverlay();
+  try {
+    await closeAccountCycle(selectedBillingAccount.account_id);
+    closeCycleModal.hide();
+    const row = tbody.querySelector(`tr[data-account-id="${selectedBillingAccount.account_id}"]`);
+    if (row) {
+      await toggleDetails(row, selectedBillingAccount, { forceRefresh: true });
+    }
+    await loadAccounts();
+  } catch (error) {
+    closeCycleError.textContent = error.message;
+    closeCycleError.classList.remove('d-none');
+  } finally {
+    hideOverlay();
+    confirmCloseCycleBtn.disabled = false;
+  }
+}
+
 
 function renderAccounts(data) {
   tbody.innerHTML = '';
@@ -31,9 +113,9 @@ function renderAccounts(data) {
   });
 }
 
-async function toggleDetails(row, acc) {
+async function toggleDetails(row, acc, { forceRefresh = false } = {}) {
   const next = row.nextElementSibling;
-  if (next && next.classList.contains('details')) {
+  if (next && next.classList.contains('details') && !forceRefresh) {
     next.remove();
     return;
   }
@@ -95,6 +177,9 @@ async function toggleDetails(row, acc) {
   }
   html += '</div>';
   html += `<div class="row mt-3"><div class="col text-center"><p class="mb-0"><strong>Total disponible TA:</strong> <span class="text-dark fw-bold fs-5">${symbol} ${formatCurrency(total)}</span></p></div></div>`;
+  if (summary.is_billing) {
+    html += `<div class="row mt-3"><div class="col text-center"><button type="button" class="btn btn-warning btn-sm" id="close-cycle-btn">Cerrar ciclo de facturación</button></div></div>`;
+  }
   html += '</div>';
   detailTd.innerHTML = html;
   detailTr.appendChild(detailTd);
@@ -106,7 +191,15 @@ async function toggleDetails(row, acc) {
       window.location.href = '/inkwell.html';
     });
   }
+  const closeCycleBtn = detailTd.querySelector('#close-cycle-btn');
+  if (closeCycleBtn) {
+    closeCycleBtn.addEventListener('click', event => {
+      event.preventDefault();
+      openCloseCycleModal(acc);
+    });
+  }
 }
+
 
 async function loadAccounts() {
   showOverlay();
@@ -116,5 +209,6 @@ async function loadAccounts() {
 }
 
 refreshBtn.addEventListener('click', loadAccounts);
+confirmCloseCycleBtn?.addEventListener('click', handleConfirmCloseCycle);
 
 loadAccounts();

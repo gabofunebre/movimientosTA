@@ -41,6 +41,32 @@ export async function fetchAccountSummary(id) {
   return res.json();
 }
 
+export async function closeAccountCycle(id) {
+  const res = await fetch(`/accounts/${id}/close-cycle`, { method: 'POST' });
+  if (!res.ok) {
+    let error = 'No se pudo cerrar el ciclo';
+    try {
+      const data = await res.json();
+      error = data.detail || error;
+    } catch (_) {}
+    throw new Error(error);
+  }
+  return res.json();
+}
+
+export async function fetchAccountCycles(id) {
+  const res = await fetch(`/accounts/${id}/cycles`);
+  if (!res.ok) {
+    let error = 'No se pudieron obtener los cierres';
+    try {
+      const data = await res.json();
+      error = data.detail || error;
+    } catch (_) {}
+    throw new Error(error);
+  }
+  return res.json();
+}
+
 export async function createTransaction(payload) {
   const res = await fetch('/transactions', {
     method: 'POST',
