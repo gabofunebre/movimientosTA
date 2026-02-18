@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import List
 
@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from config.db import get_db
 from config.constants import InvoiceType
-from models import Account, Transaction, Invoice
+from models import Account, Transaction, Invoice, AccountCycle
 from schemas import (
     AccountBalance,
     AccountIn,
@@ -16,9 +16,20 @@ from schemas import (
     BalanceOut,
     TransactionWithBalance,
     AccountSummary,
+    AccountCycleOut,
+    AccountCycleListResponse,
 )
 
 router = APIRouter(prefix="/accounts")
+
+
+def _last_cycle_closed_at_subquery():
+    return (
+        select(func.max(AccountCycle.closed_at))
+        .where(AccountCycle.account_id == Account.id)
+        .correlate(Account)
+        .scalar_subquery()
+    )
 
 
 @router.post("", response_model=AccountOut)
@@ -113,6 +124,7 @@ def delete_account(account_id: int, db: Session = Depends(get_db)):
 @router.get("/balances", response_model=List[AccountBalance])
 def account_balances(to_date: date | None = None, db: Session = Depends(get_db)):
     to_date = to_date or date.max
+    last_cycle_closed_at = _last_cycle_closed_at_subquery()
     stmt = (
         select(
             Account.id,
@@ -129,6 +141,12 @@ def account_balances(to_date: date | None = None, db: Session = Depends(get_db))
             Transaction,
             and_(
                 Transaction.account_id == Account.id,
+                func.datetime(Transaction.created_at) >= func.datetime(
+                    func.coalesce(
+                        last_cycle_closed_at,
+                        datetime.min.replace(tzinfo=timezone.utc),
+                    )
+                ),
                 Transaction.date <= bindparam("to_date"),
             ),
             isouter=True,
@@ -167,7 +185,18 @@ def account_balances(to_date: date | None = None, db: Session = Depends(get_db))
                 ),
                 0,
             ).label("iibb"),
-        ).group_by(Invoice.account_id)
+        )
+        .join(Account, Account.id == Invoice.account_id)
+        .where(
+            func.datetime(Invoice.created_at)
+            >= func.datetime(
+                func.coalesce(
+                    _last_cycle_closed_at_subquery(),
+                    datetime.min.replace(tzinfo=timezone.utc),
+                )
+            )
+        )
+        .group_by(Invoice.account_id)
     )
     tax_rows = db.execute(tax_stmt).all()
     tax_map = {r.account_id: r for r in tax_rows}
@@ -194,6 +223,13 @@ def account_balances(to_date: date | None = None, db: Session = Depends(get_db))
 @router.get("/{account_id}/balance", response_model=BalanceOut)
 def account_balance(account_id: int, to_date: date | None = None, db: Session = Depends(get_db)):
     to_date = to_date or date.max
+    last_cycle_closed_at = db.scalar(
+        select(AccountCycle.closed_at)
+        .where(AccountCycle.account_id == account_id)
+        .order_by(AccountCycle.closed_at.desc(), AccountCycle.id.desc())
+        .limit(1)
+    )
+    cycle_start = last_cycle_closed_at or datetime.min.replace(tzinfo=timezone.utc)
     stmt = (
         select((Account.opening_balance + func.coalesce(func.sum(Transaction.amount), 0)).label("balance"))
         .select_from(Account)
@@ -201,6 +237,7 @@ def account_balance(account_id: int, to_date: date | None = None, db: Session = 
             Transaction,
             and_(
                 Transaction.account_id == Account.id,
+                func.datetime(Transaction.created_at) >= func.datetime(cycle_start),
                 Transaction.date <= bindparam("to_date"),
             ),
             isouter=True,
@@ -219,28 +256,41 @@ def account_summary(account_id: int, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
         )
-    stmt = (
+
+    last_cycle_closed_at = db.scalar(
+        select(AccountCycle.closed_at)
+        .where(AccountCycle.account_id == account_id)
+        .order_by(AccountCycle.closed_at.desc(), AccountCycle.id.desc())
+        .limit(1)
+    )
+    cycle_start = last_cycle_closed_at or datetime.min.replace(tzinfo=timezone.utc)
+
+    income = db.scalar(
         select(
-            Account.opening_balance,
-            Account.is_billing,
             func.coalesce(
                 func.sum(case((Transaction.amount > 0, Transaction.amount), else_=0)),
                 0,
-            ).label("income"),
+            )
+        )
+        .where(Transaction.account_id == account_id)
+        .where(func.datetime(Transaction.created_at) >= func.datetime(cycle_start))
+    )
+    expense = db.scalar(
+        select(
             func.coalesce(
                 func.sum(case((Transaction.amount < 0, -Transaction.amount), else_=0)),
                 0,
-            ).label("expense"),
+            )
         )
-        .outerjoin(Transaction)
-        .where(Account.id == account_id)
-        .group_by(Account.id)
+        .where(Transaction.account_id == account_id)
+        .where(func.datetime(Transaction.created_at) >= func.datetime(cycle_start))
     )
-    row = db.execute(stmt).one()
+
     iva_pur = iva_sale = iibb = Decimal("0")
     inkwell_income = Decimal("0")
     inkwell_expense = Decimal("0")
-    if row.is_billing:
+
+    if acc.is_billing:
         tax_stmt = (
             select(
                 func.coalesce(
@@ -263,11 +313,13 @@ def account_summary(account_id: int, db: Session = Depends(get_db)):
                 ).label("iibb"),
             )
             .where(Invoice.account_id == account_id)
+            .where(func.datetime(Invoice.created_at) >= func.datetime(cycle_start))
         )
         tax_row = db.execute(tax_stmt).one()
         iva_pur = tax_row.iva_pur
         iva_sale = tax_row.iva_sale
         iibb = tax_row.iibb
+
         inkwell_stmt = (
             select(
                 func.coalesce(
@@ -290,22 +342,24 @@ def account_summary(account_id: int, db: Session = Depends(get_db)):
                 ).label("expense"),
             )
             .where(Transaction.account_id == account_id)
+            .where(func.datetime(Transaction.created_at) >= func.datetime(cycle_start))
             .where(Transaction.exportable_movement_id.is_not(None))
         )
         inkwell_row = db.execute(inkwell_stmt).one()
         inkwell_income = inkwell_row.income
         inkwell_expense = inkwell_row.expense
+
     return AccountSummary(
-        opening_balance=row.opening_balance,
-        income_balance=row.income,
-        expense_balance=row.expense,
-        is_billing=row.is_billing,
+        opening_balance=acc.opening_balance,
+        income_balance=income,
+        expense_balance=expense,
+        is_billing=acc.is_billing,
         inkwell_income=inkwell_income,
         inkwell_expense=inkwell_expense,
         inkwell_available=inkwell_income - inkwell_expense,
-        iva_purchases=iva_pur if row.is_billing else None,
-        iva_sales=iva_sale if row.is_billing else None,
-        iibb=iibb if row.is_billing else None,
+        iva_purchases=iva_pur if acc.is_billing else None,
+        iva_sales=iva_sale if acc.is_billing else None,
+        iibb=iibb if acc.is_billing else None,
     )
 
 
@@ -316,6 +370,13 @@ def account_transactions(
     to: date | None = None,
     db: Session = Depends(get_db),
 ):
+    last_cycle = db.scalar(
+        select(AccountCycle)
+        .where(AccountCycle.account_id == account_id)
+        .order_by(AccountCycle.closed_at.desc(), AccountCycle.id.desc())
+        .limit(1)
+    )
+
     stmt = (
         select(
             Transaction.id,
@@ -333,6 +394,10 @@ def account_transactions(
         )
         .where(Transaction.account_id == account_id)
     )
+    if last_cycle:
+        stmt = stmt.where(
+            func.datetime(Transaction.created_at) >= func.datetime(last_cycle.closed_at)
+        )
     if from_:
         stmt = stmt.where(Transaction.date >= from_)
     if to:
@@ -351,3 +416,68 @@ def account_transactions(
         )
         for r in rows
     ]
+
+
+@router.post("/{account_id}/close-cycle", response_model=AccountCycleOut)
+def close_account_cycle(account_id: int, db: Session = Depends(get_db)):
+    acc = db.get(Account, account_id)
+    if not acc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
+        )
+
+    now = datetime.now(timezone.utc)
+    hour_start = now.replace(minute=0, second=0, microsecond=0)
+    hour_end = hour_start + timedelta(hours=1)
+
+    existing_cycle = db.scalar(
+        select(AccountCycle)
+        .where(AccountCycle.account_id == account_id)
+        .where(AccountCycle.closed_at >= hour_start)
+        .where(AccountCycle.closed_at < hour_end)
+        .order_by(AccountCycle.closed_at.desc(), AccountCycle.id.desc())
+        .limit(1)
+    )
+    if existing_cycle:
+        return existing_cycle
+
+    summary = account_summary(account_id=account_id, db=db)
+    balance = summary.opening_balance + summary.income_balance - summary.expense_balance
+
+    cycle = AccountCycle(
+        account_id=account_id,
+        closed_at=now,
+        closed_by_user_id=None,
+        opening_balance_snapshot=summary.opening_balance,
+        income_snapshot=summary.income_balance,
+        expense_snapshot=summary.expense_balance,
+        balance_snapshot=balance,
+        inkwell_income_snapshot=summary.inkwell_income,
+        inkwell_expense_snapshot=summary.inkwell_expense,
+        inkwell_available_snapshot=summary.inkwell_available,
+        purchase_iva_snapshot=summary.iva_purchases,
+        sales_iva_snapshot=summary.iva_sales,
+        iibb_snapshot=summary.iibb,
+    )
+
+    db.add(cycle)
+    acc.opening_balance = balance
+    db.commit()
+    db.refresh(cycle)
+    return cycle
+
+
+@router.get("/{account_id}/cycles", response_model=AccountCycleListResponse)
+def list_account_cycles(account_id: int, db: Session = Depends(get_db)):
+    acc = db.get(Account, account_id)
+    if not acc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
+        )
+
+    rows = db.scalars(
+        select(AccountCycle)
+        .where(AccountCycle.account_id == account_id)
+        .order_by(AccountCycle.closed_at.desc(), AccountCycle.id.desc())
+    ).all()
+    return AccountCycleListResponse(items=rows)
