@@ -1,13 +1,16 @@
 """Endpoints para exportar movimientos de la cuenta de facturación."""
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import Session
 
 from auth import require_api_key
 from config.db import get_db
 from models import (
     Account,
+    AccountCycle,
     BillingSyncStatus,
     BillingTransactionEvent as BillingTransactionEventModel,
     BillingTransactionEventType,
@@ -62,6 +65,18 @@ def list_billing_movements(
     change_sync_status = get_changes_sync_status(db)
     last_confirmed_id = sync_status.last_transaction_id
     last_confirmed_change_id = change_sync_status.last_change_id
+
+    last_cycle = db.scalar(
+        select(AccountCycle)
+        .where(AccountCycle.account_id == account.id)
+        .order_by(desc(AccountCycle.closed_at), desc(AccountCycle.id))
+        .limit(1)
+    )
+    cycle_start_date = last_cycle.closed_at.date() if last_cycle else None
+    last_closed_at = last_cycle.closed_at if last_cycle else None
+    previous_cycle_balance = (
+        last_cycle.balance_snapshot if last_cycle else Decimal("0")
+    )
 
     stmt = (
         select(BillingTransactionEventModel)
@@ -121,6 +136,9 @@ def list_billing_movements(
         changes_checkpoint_id = change_sync_status.last_change_id
 
     return BillingMovementsResponse(
+        cycle_start_date=cycle_start_date,
+        last_closed_at=last_closed_at,
+        previous_cycle_balance=previous_cycle_balance,
         last_confirmed_transaction_id=last_confirmed_id,
         transactions_checkpoint_id=checkpoint_id,
         has_more_transactions=has_more,

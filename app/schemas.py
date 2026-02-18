@@ -68,6 +68,28 @@ class BillingSyncState(BaseModel):
 
 
 class BillingMovementsResponse(BaseModel):
+    cycle_start_date: date | None = Field(
+        default=None,
+        description=(
+            "Fecha de inicio del ciclo actual de facturación. "
+            "Cuando no existen cierres previos se informa null para mantener "
+            "compatibilidad hacia atrás."
+        ),
+    )
+    last_closed_at: datetime | None = Field(
+        default=None,
+        description=(
+            "Timestamp del último cierre de ciclo. Es informativo: el cierre "
+            "crea snapshots/vistas y no implica borrado del ledger histórico."
+        ),
+    )
+    previous_cycle_balance: Decimal = Field(
+        default=Decimal("0"),
+        description=(
+            "Saldo arrastrado del ciclo anterior. La regla de cálculo estable "
+            "es: total del ciclo actual + balance arrastrado."
+        ),
+    )
     last_confirmed_transaction_id: int
     transactions_checkpoint_id: int
     has_more_transactions: bool
