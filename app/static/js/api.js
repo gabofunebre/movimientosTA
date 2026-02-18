@@ -270,8 +270,13 @@ export async function deleteExportable(id) {
   return { ok: false, error };
 }
 
-export async function fetchInkwellBillingData() {
-  const res = await fetch('/inkwell/billing-data');
+export async function fetchInkwellBillingData({ limit = 20, startDate, endDate } = {}) {
+  const params = new URLSearchParams({
+    limit: String(limit),
+  });
+  if (startDate) params.append('start_date', startDate);
+  if (endDate) params.append('end_date', endDate);
+  const res = await fetch(`/inkwell/billing-data?${params.toString()}`);
   if (!res.ok) {
     let error = 'No se pudieron obtener los datos de Inkwell';
     try {
