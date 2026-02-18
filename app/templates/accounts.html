@@ -18,8 +18,28 @@
         </table>
       </div>
     </div>
+
+    <div class="modal fade" id="close-cycle-modal" tabindex="-1" aria-labelledby="close-cycle-modal-label" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="close-cycle-modal-label">Confirmar cierre de ciclo</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          </div>
+          <div class="modal-body">
+            <div id="close-cycle-message"></div>
+            <div id="close-cycle-history" class="mt-3"></div>
+            <div id="close-cycle-error" class="alert alert-danger mt-3 d-none mb-0" role="alert"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-warning" id="confirm-close-cycle">Cerrar ciclo</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
 {% endblock %}
 {% block scripts %}
-  <script type="module" src="/static/js/accounts.js?v=2"></script>
+  <script type="module" src="/static/js/accounts.js?v=3"></script>
 {% endblock %}
