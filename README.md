@@ -58,6 +58,20 @@ El endpoint `GET /movimientos_cuenta_facturada` expone dos vistas del mismo lote
 
 Importante: las bajas **solo** se representan en `transaction_events` mediante eventos con `event=deleted` y `transaction=null` + `transaction_id` para purgar entidades en el consumidor. Por diseño, nunca aparecen en `transactions` ni en `active_transactions_in_batch`.
 
+Además, la respuesta incorpora metadatos de ciclo para facilitar conciliación sin romper integraciones previas:
+
+- `cycle_start_date`: fecha de inicio del ciclo actual (normalmente coincide con la fecha del último cierre).
+- `last_closed_at`: timestamp exacto del último cierre de ciclo.
+- `previous_cycle_balance`: saldo arrastrado del ciclo anterior.
+
+Regla de cálculo estable para reportes: **total del ciclo actual + `previous_cycle_balance`**.
+
+Semántica de ciclos: el ledger histórico de movimientos **no se elimina** al cerrar ciclo; los ciclos funcionan como snapshots/vistas para segmentar cálculos.
+
+Compatibilidad hacia atrás: si todavía no existen cierres de ciclo, estos campos se informan como `null` (`cycle_start_date`, `last_closed_at`) y `0` (`previous_cycle_balance`), manteniendo el comportamiento actual del endpoint.
+
+Para consumidores de sincronización de facturación (`/movimientos_cuenta_facturada` y `/movimientos_cuenta_facturada/movimientos_exportables/*`): tratar un cierre de ciclo como cambio de ventana de cálculo, **no** como borrado de movimientos. Las eliminaciones reales siguen llegando únicamente como eventos `deleted`.
+
 ## Movimientos exportables
 
 Los endpoints bajo `/movimientos_exportables` permiten sincronizar un catálogo de movimientos con sistemas externos mediante eventos ordenados e idempotentes.
