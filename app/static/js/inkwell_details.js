@@ -21,6 +21,14 @@ const docModalBody = docModalEl?.querySelector('.modal-body') ?? null;
 const hasBootstrap = typeof window !== 'undefined' && window.bootstrap;
 const docModal =
   docModalEl && hasBootstrap ? new window.bootstrap.Modal(docModalEl) : null;
+const startDateInput = document.getElementById('inkwell-start-date');
+const endDateInput = document.getElementById('inkwell-end-date');
+const searchBtn = document.getElementById('inkwell-search');
+const resetBtn = document.getElementById('inkwell-reset');
+const resultCountBadge = document.getElementById('inkwell-result-count');
+
+const DEFAULT_LIMIT = 20;
+const FILTERED_LIMIT = 200;
 
 function attachRowInteraction(row, onActivate) {
   row.classList.add('cursor-pointer');
@@ -176,8 +184,21 @@ function renderEmptyRow(tbody, message) {
   tbody.appendChild(tr);
 }
 
-function renderInvoices(invoices) {
+function getInvoiceTypeClass(type) {
+  if (type === 'purchase') return 'text-primary-emphasis';
+  if (type === 'sale') return 'text-success-emphasis';
+  return '';
+}
+
+function updateResultCount(count, hasFilters) {
+  if (!resultCountBadge) return;
+  const suffix = hasFilters ? 'con filtros' : 'sin filtros';
+  resultCountBadge.textContent = `Mostrando ${count} ${suffix}`;
+}
+
+function renderInvoices(invoices, hasFilters = false) {
   invoicesTbody.innerHTML = '';
+  updateResultCount(invoices.length, hasFilters);
   if (!invoices.length) {
     renderEmptyRow(invoicesTbody, 'Sin facturas registradas');
     return;
@@ -191,9 +212,10 @@ function renderInvoices(invoices) {
       Number(inv.iva_amount || 0) +
       Number(inv.iibb_amount || 0) +
       Number(inv.percepciones || 0);
+    const typeClass = getInvoiceTypeClass(inv.type);
     tr.innerHTML =
       `<td class="text-center">${date}</td>` +
-      `<td class="text-center">${typeText}</td>` +
+      `<td class="text-center fw-semibold ${typeClass}">${typeText}</td>` +
       `<td class="text-end">$ ${formatCurrency(amount)}</td>`;
     attachRowInteraction(tr, () => showInvoiceDetails(inv));
     invoicesTbody.appendChild(tr);
@@ -263,7 +285,7 @@ function renderTotals(totals, currencySymbol) {
   summaryWrapper.classList.remove('d-none');
 }
 
-async function loadData() {
+async function loadData({ startDate = null, endDate = null } = {}) {
   alertBox.classList.add('d-none');
   alertBox.textContent = '';
   if (summaryWrapper) {
@@ -272,7 +294,11 @@ async function loadData() {
   showOverlay();
   try {
     const [billingData, accounts] = await Promise.all([
-      fetchInkwellBillingData(),
+      fetchInkwellBillingData({
+        limit: startDate || endDate ? FILTERED_LIMIT : DEFAULT_LIMIT,
+        startDate,
+        endDate
+      }),
       fetchAccounts()
     ]);
 
@@ -286,7 +312,7 @@ async function loadData() {
     const currencySymbol = CURRENCY_SYMBOLS[billingAccount.currency] || '$';
 
     renderTotals(totals, currencySymbol);
-    renderInvoices(billingData.invoices || []);
+    renderInvoices(billingData.invoices || [], Boolean(startDate || endDate));
     renderRetentions(billingData.retention_certificates || []);
   } catch (error) {
     invoicesTbody.innerHTML = '';
@@ -301,6 +327,24 @@ async function loadData() {
   }
 }
 
-refreshBtn.addEventListener('click', loadData);
+refreshBtn.addEventListener('click', () => {
+  loadData({
+    startDate: startDateInput?.value || null,
+    endDate: endDateInput?.value || null
+  });
+});
+
+searchBtn?.addEventListener('click', () => {
+  loadData({
+    startDate: startDateInput?.value || null,
+    endDate: endDateInput?.value || null
+  });
+});
+
+resetBtn?.addEventListener('click', () => {
+  if (startDateInput) startDateInput.value = '';
+  if (endDateInput) endDateInput.value = '';
+  loadData();
+});
 
 loadData();
