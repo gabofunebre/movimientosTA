@@ -51,7 +51,22 @@ echo "▶ Levantando base de datos..."
 $DOCKER_COMPOSE up -d "$DB_SERVICE" >/dev/null
 
 echo "▶ Restaurando dump '$DUMP_PATH' en base '$POSTGRES_DB'..."
-cat "$DUMP_PATH" | $DOCKER_COMPOSE exec -T "$DB_SERVICE" pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner
+DB_CONTAINER_ID="$($DOCKER_COMPOSE ps -q "$DB_SERVICE")"
+if [[ -z "$DB_CONTAINER_ID" ]]; then
+  echo "❌ Error: no se pudo obtener el contenedor del servicio '$DB_SERVICE'"
+  exit 1
+fi
+
+CONTAINER_DUMP_PATH="/tmp/restore_$(date +%s)_$(basename "$DUMP_PATH" | tr -cs '[:alnum:]._-' '_')"
+cleanup_dump() {
+  $DOCKER_COMPOSE exec -T "$DB_SERVICE" rm -f "$CONTAINER_DUMP_PATH" >/dev/null 2>&1 || true
+}
+trap cleanup_dump EXIT
+
+echo "▶ Copiando dump al contenedor de base..."
+docker cp "$DUMP_PATH" "${DB_CONTAINER_ID}:$CONTAINER_DUMP_PATH"
+
+$DOCKER_COMPOSE exec -T "$DB_SERVICE" pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner "$CONTAINER_DUMP_PATH"
 
 echo "▶ Levantando app..."
 $DOCKER_COMPOSE up -d "$APP_SERVICE" >/dev/null
